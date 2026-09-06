@@ -1,0 +1,126 @@
+{
+  "version": "mvp-v1",
+  "cases": [
+    {
+      "id": "person-email-phone-format-auto-match",
+      "entity_type": "person",
+      "record_a": {
+        "name": "Abdulkerim Hassen",
+        "email": "abdul@example.com",
+        "phone": "+251911223344"
+      },
+      "record_b": {
+        "name": "  ABDULKERIM   HASSEN ",
+        "email": "abdul@EXAMPLE.COM",
+        "phone": "0911 223 344"
+      },
+      "expected_decision": "AUTO_MATCH",
+      "rationale": "Exact email and equivalent Ethiopian phone formats provide strong evidence."
+    },
+    {
+      "id": "person-email-with-missing-phone-auto-match",
+      "entity_type": "person",
+      "record_a": {
+        "name": "Marta Bekele",
+        "email": "marta@example.com",
+        "phone": "+251911000111"
+      },
+      "record_b": {
+        "name": "Marta B.",
+        "email": "marta@example.com"
+      },
+      "expected_decision": "AUTO_MATCH",
+      "rationale": "An exact email plus compatible name evidence remains strong when one phone is missing."
+    },
+    {
+      "id": "person-unicode-name-review",
+      "entity_type": "person",
+      "record_a": {
+        "name": "José Álvarez",
+        "phone": "+34910000001"
+      },
+      "record_b": {
+        "name": "Jose Alvarez",
+        "phone": "+34910000002"
+      },
+      "expected_decision": "REVIEW",
+      "rationale": "Unicode name similarity conflicts with different phone values and needs review."
+    },
+    {
+      "id": "person-shared-name-no-match",
+      "entity_type": "person",
+      "record_a": {
+        "name": "John Smith",
+        "email": "john.one@example.com",
+        "phone": "+12025550101"
+      },
+      "record_b": {
+        "name": "John Smith",
+        "email": "john.two@example.com",
+        "phone": "+12025550199"
+      },
+      "expected_decision": "NO_MATCH",
+      "rationale": "A common identical name cannot overcome conflicting email and phone evidence."
+    },
+    {
+      "id": "company-abbreviation-domain-auto-match",
+      "entity_type": "company",
+      "record_a": {
+        "name": "Acme Trading PLC",
+        "domain": "acmetrading.example"
+      },
+      "record_b": {
+        "name": "ACME Trading",
+        "domain": "www.acmetrading.example"
+      },
+      "expected_decision": "AUTO_MATCH",
+      "rationale": "The same domain and a legal-suffix name variation provide strong company evidence."
+    },
+    {
+      "id": "company-registration-conflict-review",
+      "entity_type": "company",
+      "record_a": {
+        "name": "Blue Nile Imports",
+        "domain": "bluenile.example",
+        "registration_id": "ET-1001"
+      },
+      "record_b": {
+        "name": "Blue Nile Imports",
+        "domain": "bluenile.example",
+        "registration_id": "ET-9009"
+      },
+      "expected_decision": "REVIEW",
+      "rationale": "A conflicting trusted registration identifier blocks automatic matching."
+    },
+    {
+      "id": "company-common-name-country-no-match",
+      "entity_type": "company",
+      "record_a": {
+        "name": "Global Services Ltd",
+        "domain": "global-ke.example",
+        "address": { "country": "KE" }
+      },
+      "record_b": {
+        "name": "Global Services Ltd",
+        "domain": "global-gb.example",
+        "address": { "country": "GB" }
+      },
+      "expected_decision": "NO_MATCH",
+      "rationale": "A common name with different domains and countries describes separate companies."
+    },
+    {
+      "id": "company-renamed-domain-review",
+      "entity_type": "company",
+      "record_a": {
+        "name": "Rift Valley Logistics",
+        "domain": "riftlogistics.example"
+      },
+      "record_b": {
+        "name": "Rift Transport Group",
+        "domain": "riftlogistics.example"
+      },
+      "expected_decision": "REVIEW",
+      "rationale": "A stable domain suggests a rename, but the changed company name needs review."
+    }
+  ]
+}
