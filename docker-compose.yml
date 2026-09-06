@@ -1,0 +1,84 @@
+name: resolve-api
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-resolve}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-resolve}
+      POSTGRES_USER: ${POSTGRES_USER:-resolve}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/18/docker
+
+  redis:
+    image: redis:8-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['npm', 'run', 'start:api']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      API_PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-resolve}:${POSTGRES_PASSWORD:-resolve}@postgres:5432/${POSTGRES_DB:-resolve}?schema=public
+      NODE_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REQUEST_BODY_LIMIT: ${REQUEST_BODY_LIMIT:-1mb}
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - '${API_PORT:-3000}:3000'
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['npm', 'run', 'start:worker']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      API_PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-resolve}:${POSTGRES_PASSWORD:-resolve}@postgres:5432/${POSTGRES_DB:-resolve}?schema=public
+      NODE_ENV: production
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REQUEST_BODY_LIMIT: ${REQUEST_BODY_LIMIT:-1mb}
+
+volumes:
+  postgres-data:
+  redis-data:

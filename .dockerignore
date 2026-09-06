@@ -1,0 +1,9 @@
+.git
+.env
+coverage
+**/dist
+node_modules
+**/node_modules
+npm-debug.log
+.npm-cache/
+packages/database/src/generated/
