@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createPrismaClient } from '@resolve/database';
 import { Redis } from 'ioredis';
@@ -11,8 +11,9 @@ import { InfrastructureLifecycleService } from './infrastructure-lifecycle.servi
 import { PRISMA_CLIENT, REDIS_CLIENT } from './infrastructure.tokens.js';
 import { RedisHealthIndicator } from './redis-health.indicator.js';
 
+@Global()
 @Module({
-  exports: [DATABASE_HEALTH_INDICATOR, REDIS_HEALTH_INDICATOR],
+  exports: [DATABASE_HEALTH_INDICATOR, PRISMA_CLIENT, REDIS_CLIENT, REDIS_HEALTH_INDICATOR],
   providers: [
     {
       inject: [ConfigService],

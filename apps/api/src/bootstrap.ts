@@ -2,9 +2,20 @@ import { type INestApplication, RequestMethod, ValidationPipe } from '@nestjs/co
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json } from 'express';
 
+import { ApiExceptionFilter } from './common/http/api-exception.filter.js';
+import type { RawBodyRequest } from './common/http/raw-body-request.js';
+
 export function configureApplication(app: INestApplication, requestBodyLimit: string): void {
   app.enableShutdownHooks();
-  app.use(json({ limit: requestBodyLimit }));
+  app.use(
+    json({
+      limit: requestBodyLimit,
+      verify: (request_, _response, buffer) => {
+        (request_ as RawBodyRequest).rawBody = Buffer.from(buffer);
+      },
+    }),
+  );
+  app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalPipes(
     new ValidationPipe({
       forbidNonWhitelisted: true,

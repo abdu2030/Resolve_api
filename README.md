@@ -4,9 +4,9 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
-Week 1 Days 1-3 provide the repository foundation, MVP contracts, golden dataset, NestJS API and worker shells, PostgreSQL and Redis infrastructure, and the foundational multi-tenant database schema.
+Week 1 Days 1-4 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, and raw record ingestion.
 
-The database now stores tenants, API key metadata, source systems, immutable source records, canonical entities, and explicit entity-record links. Authentication, record-ingestion endpoints, normalization services, and matching behavior remain for later roadmap days.
+The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new version. Matching, normalization, scoring, and entity linking begin on later roadmap days.
 
 ## Architecture
 
@@ -66,6 +66,56 @@ npm run prisma:migrate:dev -- --name descriptive_name
 
 Never edit a deployed database by hand. Commit the Prisma schema and generated migration together.
 
+## Create a local tenant and API key
+
+Apply the migrations, then run the bootstrap command:
+
+```powershell
+npm run auth:bootstrap -- --tenant-name "Local Demo" --environment test
+```
+
+The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears; PostgreSQL stores only its SHA-256 hash. The default key has `sources:write` and `records:write` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name.
+
+## Register a source and ingest records
+
+Set the key returned by the bootstrap command:
+
+```powershell
+$resolveApiKey = 'rslv_test_replace_this_value'
+$resolveHeaders = @{ Authorization = "Bearer $resolveApiKey" }
+```
+
+Register a tenant-local source:
+
+```powershell
+$source = Invoke-RestMethod -Method Post -Uri http://localhost:3000/v1/sources `
+  -Headers $resolveHeaders -ContentType 'application/json' `
+  -Body '{"name":"crm","type":"api"}'
+```
+
+Ingest a Person record:
+
+```powershell
+$recordBody = '{"source":"crm","external_id":"contact_9234","entity_type":"person","data":{"name":"Abdulkerim Hassen","email":"abdul@example.com","address":{"country":"et"}}}'
+$record = Invoke-RestMethod -Method Post -Uri http://localhost:3000/v1/records `
+  -Headers $resolveHeaders -ContentType 'application/json' -Body $recordBody
+```
+
+The first request returns `CREATED` with version 1. Repeating the same logical payload returns `UNCHANGED`. Changing a value returns `UPDATED` and increments the version while retaining prior raw payloads in `source_record_versions`.
+
+For explicit request replay, add an idempotency key:
+
+```powershell
+$resolveIdempotentHeaders = @{
+  Authorization = "Bearer $resolveApiKey"
+  'Idempotency-Key' = 'contact-9234-create'
+}
+Invoke-WebRequest -Method Post -Uri http://localhost:3000/v1/records `
+  -Headers $resolveIdempotentHeaders -ContentType 'application/json' -Body $recordBody
+```
+
+A replay with the same key and request returns the original status and response plus `Idempotency-Replayed: true`. Reusing the key for different content returns HTTP 409.
+
 ## Start the complete local stack
 
 ```powershell
@@ -123,7 +173,7 @@ packages/contracts                    DTOs and public contract types
 packages/config                       Environment validation
 packages/database                     Prisma client and schema
 packages/database/prisma/migrations   Ordered PostgreSQL migrations
-tests/integration                     Database migration and constraint tests
+tests/integration                     Migration, API, isolation, and concurrency tests
 tests/golden-dataset                  Labeled resolution examples
 docs                                  Architecture and policy references
 ```

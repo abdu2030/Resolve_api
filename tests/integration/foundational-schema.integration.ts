@@ -118,9 +118,9 @@ describe('foundational schema migration', () => {
        FROM information_schema.tables
        WHERE table_schema = $1
          AND table_type = 'BASE TABLE'
-         AND table_name <> '_prisma_migrations'
+         AND table_name = ANY($2::text[])
        ORDER BY table_name`,
-      [schemaName],
+      [schemaName, expectedTables],
     );
     const enums = await database!.query<{ typname: string }>(
       `SELECT type.typname

@@ -42,7 +42,9 @@ model Tenant {
   sourceSystems     SourceSystem[]
   sourceRecords     SourceRecord[]
   entities          Entity[]
-  entityRecordLinks EntityRecordLink[]
+  entityRecordLinks     EntityRecordLink[]
+  sourceRecordVersions SourceRecordVersion[]
+  idempotencyRequests  IdempotencyRequest[]
 
   @@map("tenants")
 }
@@ -86,6 +88,8 @@ model SourceRecord {
   externalId           String            @map("external_id") @db.VarChar(255)
   entityType           EntityType        @map("entity_type")
   rawPayload           Json              @map("raw_payload")
+  rawPayloadHash       String?           @map("raw_payload_hash") @db.Char(64)
+  currentVersion       Int               @default(1) @map("current_version")
   normalizedPayload    Json?             @map("normalized_payload")
   normalizationVersion String?           @map("normalization_version") @db.VarChar(50)
   normalizedEmail      String?           @map("normalized_email") @db.VarChar(320)
@@ -97,6 +101,7 @@ model SourceRecord {
   tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "source_records_tenant_fkey")
   sourceSystem         SourceSystem      @relation(fields: [tenantId, sourceSystemId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "source_records_tenant_source_system_fkey")
   entityRecordLink     EntityRecordLink?
+  versions             SourceRecordVersion[]
 
   @@unique([tenantId, id], map: "source_records_tenant_id_key")
   @@unique([tenantId, sourceSystemId, externalId], map: "source_records_tenant_source_external_key")
@@ -105,6 +110,37 @@ model SourceRecord {
   @@index([tenantId, companyDomain], map: "source_records_tenant_company_domain_idx")
   @@index([tenantId, entityType, normalizedNamePrefix], map: "source_records_tenant_type_name_prefix_idx")
   @@map("source_records")
+}
+
+model SourceRecordVersion {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  sourceRecordId String       @map("source_record_id") @db.Uuid
+  version        Int
+  rawPayload     Json         @map("raw_payload")
+  payloadHash    String       @map("payload_hash") @db.Char(64)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "source_record_versions_tenant_fkey")
+  sourceRecord   SourceRecord @relation(fields: [tenantId, sourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "source_record_versions_tenant_source_record_fkey")
+
+  @@unique([tenantId, sourceRecordId, version], map: "source_record_versions_tenant_record_version_key")
+  @@map("source_record_versions")
+}
+
+model IdempotencyRequest {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  key            String   @db.VarChar(255)
+  operation      String   @db.VarChar(100)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "idempotency_requests_tenant_fkey")
+
+  @@unique([tenantId, key], map: "idempotency_requests_tenant_key_key")
+  @@index([tenantId, createdAt], map: "idempotency_requests_tenant_created_idx")
+  @@map("idempotency_requests")
 }
 
 model Entity {

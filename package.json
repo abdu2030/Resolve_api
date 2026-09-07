@@ -11,6 +11,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "auth:bootstrap": "tsx --env-file=.env apps/api/src/auth/bootstrap-api-key.ts",
     "build": "npm run build -w @resolve/contracts && npm run build -w @resolve/config && npm run build -w @resolve/database && npm run build -w @resolve/api && npm run build -w @resolve/worker",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
