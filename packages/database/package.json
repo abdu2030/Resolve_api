@@ -7,6 +7,9 @@
   "scripts": {
     "build": "npm run prisma:generate && tsc -p tsconfig.build.json",
     "prisma:generate": "prisma generate --config ../../prisma.config.ts",
+    "prisma:migrate:deploy": "prisma migrate deploy --config ../../prisma.config.ts",
+    "prisma:migrate:dev": "prisma migrate dev --config ../../prisma.config.ts",
+    "prisma:validate": "prisma validate --config ../../prisma.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

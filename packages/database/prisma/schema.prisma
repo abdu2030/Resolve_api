@@ -6,3 +6,137 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+
+  @@map("tenant_status")
+}
+
+enum EntityType {
+  PERSON
+  COMPANY
+
+  @@map("entity_type")
+}
+
+enum MatchDecision {
+  AUTO_MATCH
+  REVIEW
+  NO_MATCH
+
+  @@map("match_decision")
+}
+
+model Tenant {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String             @db.VarChar(120)
+  status            TenantStatus       @default(ACTIVE)
+  plan              String             @default("free") @db.VarChar(50)
+  planMetadata      Json               @default("{}") @map("plan_metadata")
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  apiKeys           ApiKey[]
+  sourceSystems     SourceSystem[]
+  sourceRecords     SourceRecord[]
+  entities          Entity[]
+  entityRecordLinks EntityRecordLink[]
+
+  @@map("tenants")
+}
+
+model ApiKey {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  name       String    @db.VarChar(120)
+  prefix     String    @db.VarChar(32)
+  keyHash    String    @unique(map: "api_keys_key_hash_key") @map("key_hash") @db.VarChar(255)
+  scopes     String[]  @default([])
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(3)
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "api_keys_tenant_fkey")
+
+  @@index([tenantId, revokedAt], map: "api_keys_tenant_revoked_idx")
+  @@index([prefix], map: "api_keys_prefix_idx")
+  @@map("api_keys")
+}
+
+model SourceSystem {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  name          String         @db.VarChar(120)
+  type          String         @db.VarChar(50)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "source_systems_tenant_fkey")
+  sourceRecords SourceRecord[]
+
+  @@unique([tenantId, name], map: "source_systems_tenant_name_key")
+  @@unique([tenantId, id], map: "source_systems_tenant_id_key")
+  @@map("source_systems")
+}
+
+model SourceRecord {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String            @map("tenant_id") @db.Uuid
+  sourceSystemId       String            @map("source_system_id") @db.Uuid
+  externalId           String            @map("external_id") @db.VarChar(255)
+  entityType           EntityType        @map("entity_type")
+  rawPayload           Json              @map("raw_payload")
+  normalizedPayload    Json?             @map("normalized_payload")
+  normalizationVersion String?           @map("normalization_version") @db.VarChar(50)
+  normalizedEmail      String?           @map("normalized_email") @db.VarChar(320)
+  normalizedPhone      String?           @map("normalized_phone") @db.VarChar(32)
+  companyDomain        String?           @map("company_domain") @db.VarChar(253)
+  normalizedNamePrefix String?           @map("normalized_name_prefix") @db.VarChar(64)
+  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "source_records_tenant_fkey")
+  sourceSystem         SourceSystem      @relation(fields: [tenantId, sourceSystemId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "source_records_tenant_source_system_fkey")
+  entityRecordLink     EntityRecordLink?
+
+  @@unique([tenantId, id], map: "source_records_tenant_id_key")
+  @@unique([tenantId, sourceSystemId, externalId], map: "source_records_tenant_source_external_key")
+  @@index([tenantId, normalizedEmail], map: "source_records_tenant_normalized_email_idx")
+  @@index([tenantId, normalizedPhone], map: "source_records_tenant_normalized_phone_idx")
+  @@index([tenantId, companyDomain], map: "source_records_tenant_company_domain_idx")
+  @@index([tenantId, entityType, normalizedNamePrefix], map: "source_records_tenant_type_name_prefix_idx")
+  @@map("source_records")
+}
+
+model Entity {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String             @map("tenant_id") @db.Uuid
+  entityType        EntityType         @map("entity_type")
+  canonicalData     Json               @default("{}") @map("canonical_data")
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "entities_tenant_fkey")
+  entityRecordLinks EntityRecordLink[]
+
+  @@unique([tenantId, id], map: "entities_tenant_id_key")
+  @@index([tenantId, entityType], map: "entities_tenant_entity_type_idx")
+  @@map("entities")
+}
+
+model EntityRecordLink {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String        @map("tenant_id") @db.Uuid
+  entityId         String        @map("entity_id") @db.Uuid
+  sourceRecordId   String        @map("source_record_id") @db.Uuid
+  score            Decimal       @db.Decimal(5, 4)
+  decision         MatchDecision
+  algorithmVersion String        @map("algorithm_version") @db.VarChar(50)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_fkey")
+  entity           Entity        @relation(fields: [tenantId, entityId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_entity_fkey")
+  sourceRecord     SourceRecord  @relation(fields: [tenantId, sourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_source_record_fkey")
+
+  @@unique([tenantId, sourceRecordId], map: "entity_record_links_tenant_record_key")
+  @@index([tenantId, entityId], map: "entity_record_links_tenant_entity_idx")
+  @@map("entity_record_links")
+}

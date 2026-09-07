@@ -16,9 +16,13 @@
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
     "prisma:generate": "npm run prisma:generate -w @resolve/database",
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy -w @resolve/database",
+    "prisma:migrate:dev": "npm run prisma:migrate:dev -w @resolve/database --",
+    "prisma:validate": "npm run prisma:validate -w @resolve/database",
     "start:api": "npm run start -w @resolve/api",
     "start:worker": "npm run start -w @resolve/worker",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config jest.integration.config.cjs --runInBand",
     "typecheck": "npm run build -w @resolve/contracts && npm run build -w @resolve/config && npm run build -w @resolve/database && npm run typecheck -w @resolve/api && npm run typecheck -w @resolve/worker"
   },
   "devDependencies": {

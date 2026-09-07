@@ -11,6 +11,22 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      TEST_DATABASE_URL: postgresql://resolve:resolve@localhost:5432/resolve?schema=public
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: resolve
+          POSTGRES_USER: resolve
+          POSTGRES_PASSWORD: resolve
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U resolve -d resolve"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -24,5 +40,6 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:integration
       - run: npm run build
       - run: docker compose config
