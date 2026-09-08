@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { EntityType, type RecordIngestionResult, type RecordInputDto } from '@resolve/contracts';
 import { DatabaseEntityType, Prisma, type ResolvePrismaClient } from '@resolve/database';
+import { NORMALIZATION_VERSION, normalizeRecord } from '@resolve/normalization';
 
 import { acquireTransactionLock } from '../common/database/advisory-lock.js';
 import { ApiException } from '../common/http/api-exception.js';
@@ -96,6 +97,15 @@ async function upsertRecord(
     input.entity_type === EntityType.Person
       ? DatabaseEntityType.PERSON
       : DatabaseEntityType.COMPANY;
+  const normalized = normalizeRecord(input.entity_type, rawData);
+  const normalizedData = {
+    normalizedPayload: normalized.normalized_payload as Prisma.InputJsonObject,
+    normalizationVersion: normalized.normalization_version,
+    normalizedEmail: normalized.normalized_email,
+    normalizedPhone: normalized.normalized_phone,
+    companyDomain: normalized.company_domain,
+    normalizedNamePrefix: normalized.normalized_name_prefix,
+  };
   let existing = await transaction.sourceRecord.findUnique({
     where: {
       tenantId_sourceSystemId_externalId: {
@@ -115,6 +125,7 @@ async function upsertRecord(
         entityType: databaseEntityType,
         rawPayload: rawData as Prisma.InputJsonObject,
         rawPayloadHash: payloadHash,
+        ...normalizedData,
       },
     });
     await transaction.sourceRecordVersion.create({
@@ -155,6 +166,12 @@ async function upsertRecord(
   }
 
   if (existing.rawPayloadHash === payloadHash) {
+    if (existing.normalizationVersion !== NORMALIZATION_VERSION) {
+      existing = await transaction.sourceRecord.update({
+        where: { id: existing.id },
+        data: normalizedData,
+      });
+    }
     return executionFor(existing, input.entity_type, 'UNCHANGED', 200);
   }
 
@@ -174,12 +191,7 @@ async function upsertRecord(
       currentVersion: nextVersion,
       rawPayload: rawData as Prisma.InputJsonObject,
       rawPayloadHash: payloadHash,
-      normalizedPayload: Prisma.DbNull,
-      normalizationVersion: null,
-      normalizedEmail: null,
-      normalizedPhone: null,
-      companyDomain: null,
-      normalizedNamePrefix: null,
+      ...normalizedData,
     },
   });
   return executionFor(updated, input.entity_type, 'UPDATED', 200);

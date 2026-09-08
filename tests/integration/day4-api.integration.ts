@@ -372,18 +372,31 @@ describe('Day 4 API', () => {
       { version: 1, name: 'Abdulkerim Hassen' },
       { version: 2, name: 'Abdulkerim H.' },
     ]);
-    const cleared = await database.query<{
-      normalized_payload_is_null: boolean;
-      normalization_version_is_null: boolean;
+    const normalized = await database.query<{
+      normalized_payload: object;
+      normalization_version: string;
     }>(
-      `SELECT normalized_payload IS NULL AS normalized_payload_is_null,
-       normalization_version IS NULL AS normalization_version_is_null
+      `SELECT normalized_payload, normalization_version
        FROM source_records WHERE id = $1`,
       [body.record_id],
     );
-    expect(cleared.rows[0]).toEqual({
-      normalized_payload_is_null: true,
-      normalization_version_is_null: true,
+    expect(normalized.rows[0]).toEqual({
+      normalized_payload: {
+        name: 'abdulkerim h.',
+        email: null,
+        phone: null,
+        company: null,
+        company_domain: null,
+        address: {
+          line1: null,
+          line2: null,
+          city: 'addis ababa',
+          region: null,
+          postal_code: null,
+          country: 'ET',
+        },
+      },
+      normalization_version: 'normalization-v1',
     });
   });
 

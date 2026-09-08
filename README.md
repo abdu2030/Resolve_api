@@ -4,13 +4,13 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
-Week 1 Days 1-4 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, and raw record ingestion.
+Week 1 Days 1-5 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, and deterministic Person/Company normalization.
 
-The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new version. Matching, normalization, scoring, and entity linking begin on later roadmap days.
+The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. Matching, scoring, and entity linking begin on later roadmap days.
 
 ## Architecture
 
-Resolve is an npm-workspaces modular monolith. The NestJS API handles HTTP and readiness, the NestJS worker hosts BullMQ background processing, PostgreSQL is durable storage, and Redis provides queue and coordination infrastructure. Shared contracts, configuration, and Prisma access live in focused packages. See `docs/architecture/overview.md` for the process boundaries and persistence model.
+Resolve is an npm-workspaces modular monolith. The NestJS API handles HTTP and readiness, the NestJS worker hosts BullMQ background processing, PostgreSQL is durable storage, and Redis provides queue and coordination infrastructure. Shared contracts, configuration, Prisma access, and pure normalization rules live in focused packages. See `docs/architecture/overview.md` for the process boundaries and persistence model.
 
 ## Environment variables
 
@@ -101,7 +101,7 @@ $record = Invoke-RestMethod -Method Post -Uri http://localhost:3000/v1/records `
   -Headers $resolveHeaders -ContentType 'application/json' -Body $recordBody
 ```
 
-The first request returns `CREATED` with version 1. Repeating the same logical payload returns `UNCHANGED`. Changing a value returns `UPDATED` and increments the version while retaining prior raw payloads in `source_record_versions`.
+The first request returns `CREATED` with version 1. Repeating the same logical payload returns `UNCHANGED`. Changing a value returns `UPDATED` and increments the version while retaining prior raw payloads in `source_record_versions`. The same transaction stores `normalization-v1` values in the separate normalized columns.
 
 For explicit request replay, add an idempotency key:
 
@@ -173,6 +173,7 @@ packages/contracts                    DTOs and public contract types
 packages/config                       Environment validation
 packages/database                     Prisma client and schema
 packages/database/prisma/migrations   Ordered PostgreSQL migrations
+packages/normalization                Pure, versioned field and record normalization
 tests/integration                     Migration, API, isolation, and concurrency tests
 tests/golden-dataset                  Labeled resolution examples
 docs                                  Architecture and policy references
