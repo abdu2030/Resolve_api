@@ -2,6 +2,7 @@ export type NodeEnvironment = 'development' | 'production' | 'test';
 
 export interface EnvironmentConfig {
   apiPort: number;
+  blockingMaxCandidates: number;
   databaseUrl: string;
   nodeEnv: NodeEnvironment;
   redisHost: string;
@@ -11,6 +12,8 @@ export interface EnvironmentConfig {
 
 const SUPPORTED_ENVIRONMENTS = new Set<NodeEnvironment>(['development', 'production', 'test']);
 const BODY_LIMIT_PATTERN = /^\d+(?:b|kb|mb)$/i;
+const DEFAULT_BLOCKING_MAX_CANDIDATES = 100;
+const MAX_BLOCKING_CANDIDATES = 1000;
 
 function invalid(key: string): never {
   throw new Error(`Invalid environment variable: ${key}`);
@@ -36,6 +39,23 @@ function port(input: Record<string, unknown>, key: string): number {
   return parsed;
 }
 
+function optionalInteger(
+  input: Record<string, unknown>,
+  key: string,
+  defaultValue: number,
+  maximum: number,
+): number {
+  const value = input[key];
+  if (value === undefined) return defaultValue;
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return invalid(key);
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maximum) {
+    return invalid(key);
+  }
+  return parsed;
+}
+
 export function validateEnvironment(input: Record<string, unknown>): EnvironmentConfig {
   const nodeEnv = requiredString(input, 'NODE_ENV');
   if (!SUPPORTED_ENVIRONMENTS.has(nodeEnv as NodeEnvironment)) {
@@ -49,6 +69,12 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
 
   return {
     apiPort: port(input, 'API_PORT'),
+    blockingMaxCandidates: optionalInteger(
+      input,
+      'BLOCKING_MAX_CANDIDATES',
+      DEFAULT_BLOCKING_MAX_CANDIDATES,
+      MAX_BLOCKING_CANDIDATES,
+    ),
     databaseUrl: requiredString(input, 'DATABASE_URL'),
     nodeEnv: nodeEnv as NodeEnvironment,
     redisHost: requiredString(input, 'REDIS_HOST'),

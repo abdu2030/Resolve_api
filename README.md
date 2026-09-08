@@ -4,9 +4,9 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
-Week 1 Days 1-5 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, and deterministic Person/Company normalization.
+Week 1 Days 1-6 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, and bounded candidate blocking.
 
-The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. Matching, scoring, and entity linking begin on later roadmap days.
+The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. Internal `blocking-v1` retrieves only tenant-local, same-type linked entity candidates through bounded indexed passes. Comparison, scoring, decisions, and automatic entity linking begin on later roadmap days.
 
 ## Architecture
 
@@ -14,20 +14,21 @@ Resolve is an npm-workspaces modular monolith. The NestJS API handles HTTP and r
 
 ## Environment variables
 
-| Variable             | Purpose                                                | Example/default                     |
-| -------------------- | ------------------------------------------------------ | ----------------------------------- |
-| `NODE_ENV`           | Runtime mode: `development`, `test`, or `production`   | `development`                       |
-| `API_PORT`           | Host port used by the API                              | `3000`                              |
-| `DATABASE_URL`       | PostgreSQL connection string used by Prisma            | Local Compose URL in `.env.example` |
-| `TEST_DATABASE_URL`  | Optional URL used by database integration tests        | `DATABASE_URL`, then local Compose  |
-| `REDIS_HOST`         | Redis hostname                                         | `localhost`                         |
-| `REDIS_PORT`         | Redis port                                             | `6379`                              |
-| `REQUEST_BODY_LIMIT` | Maximum JSON request body size                         | `1mb`                               |
-| `POSTGRES_DB`        | Compose PostgreSQL database name                       | `resolve`                           |
-| `POSTGRES_USER`      | Compose PostgreSQL user                                | `resolve`                           |
-| `POSTGRES_PASSWORD`  | Compose PostgreSQL password for local development only | `resolve`                           |
+| Variable                  | Purpose                                                | Example/default                     |
+| ------------------------- | ------------------------------------------------------ | ----------------------------------- |
+| `NODE_ENV`                | Runtime mode: `development`, `test`, or `production`   | `development`                       |
+| `API_PORT`                | Host port used by the API                              | `3000`                              |
+| `BLOCKING_MAX_CANDIDATES` | Final candidate cap; integer from 1 through 1000       | `100`                               |
+| `DATABASE_URL`            | PostgreSQL connection string used by Prisma            | Local Compose URL in `.env.example` |
+| `TEST_DATABASE_URL`       | Optional URL used by database integration tests        | `DATABASE_URL`, then local Compose  |
+| `REDIS_HOST`              | Redis hostname                                         | `localhost`                         |
+| `REDIS_PORT`              | Redis port                                             | `6379`                              |
+| `REQUEST_BODY_LIMIT`      | Maximum JSON request body size                         | `1mb`                               |
+| `POSTGRES_DB`             | Compose PostgreSQL database name                       | `resolve`                           |
+| `POSTGRES_USER`           | Compose PostgreSQL user                                | `resolve`                           |
+| `POSTGRES_PASSWORD`       | Compose PostgreSQL password for local development only | `resolve`                           |
 
-The application validates its six runtime variables at startup and reports only the invalid variable name, never its value.
+The application validates required runtime variables and the optional candidate limit at startup. Validation reports only the invalid variable name, never its value.
 
 ## Prerequisites
 
@@ -168,13 +169,14 @@ docker compose config
 
 ```text
 apps/api                              HTTP API and health endpoint
+apps/api/src/blocking                 Internal bounded candidate generation
 apps/worker                           BullMQ worker process
 packages/contracts                    DTOs and public contract types
 packages/config                       Environment validation
 packages/database                     Prisma client and schema
 packages/database/prisma/migrations   Ordered PostgreSQL migrations
 packages/normalization                Pure, versioned field and record normalization
-tests/integration                     Migration, API, isolation, and concurrency tests
+tests/integration                     Migration, API, isolation, blocking-plan, and concurrency tests
 tests/golden-dataset                  Labeled resolution examples
 docs                                  Architecture and policy references
 ```

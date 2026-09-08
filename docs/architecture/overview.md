@@ -15,7 +15,8 @@ BullMQ worker ------> Redis
 `packages/contracts` owns public types and validation, `packages/config`
 owns process configuration, `packages/database` owns the Prisma schema,
 generated client, and migrations, and `packages/normalization` owns pure,
-versioned normalization rules.
+versioned normalization rules. The API's `blocking` module owns indexed,
+bounded candidate generation.
 
 PostgreSQL is the durable source of truth. Redis supplies queue and
 coordination infrastructure and is safe to rebuild.
@@ -50,8 +51,8 @@ entity_record_links                 explicit evidence-bearing association
 ```
 
 The first blocking indexes support tenant-scoped lookup by normalized email,
-phone, company domain, and entity-type/name prefix. Candidate generation must
-use these indexed access patterns and remain bounded when it is implemented.
+phone, company domain, and entity-type/name prefix. `blocking-v1` uses these
+access patterns directly and verifies them with real PostgreSQL query plans.
 
 The resolution flow remains:
 
@@ -99,3 +100,37 @@ state is refreshed without creating a raw version.
 
 Day 5 does not generate candidates, score matches, create canonical entities,
 or link records.
+
+## Day 6 blocking boundary
+
+`CandidateGenerationService` accepts a trusted tenant ID and source-record
+ID, loads only that tenant's normalized projections, and runs enabled passes in
+this order:
+
+1. exact normalized email;
+2. exact normalized phone;
+3. exact company domain;
+4. exact normalized-name prefix with normalized city and country.
+
+Each pass searches normalized source records already connected to canonical
+entities through `entity_record_links`. Supporting records and entities must
+belong to the same tenant and have the incoming record's entity type. The
+incoming record itself and unlinked records are excluded.
+
+Every enabled pass fetches at most `BLOCKING_MAX_CANDIDATES + 1` distinct
+entities. The extra row detects overflow. Results are unioned in signal
+priority, deduplicated by entity ID, and finally capped at the configured
+maximum, which defaults to 100 and cannot exceed 1000. Candidates retain their
+blocking signals and supporting record IDs, and the result records
+`blocking-v1` plus a truncation flag.
+
+The exact production queries are exercised with `EXPLAIN (FORMAT JSON)`.
+Integration tests require PostgreSQL to choose the email, phone, domain, and
+name-prefix indexes without disabling sequential scans.
+
+Prisma raw SQL does not inherit the adapter schema, so the query builders
+safely qualify static table and enum names from the trusted `DATABASE_URL`
+schema. Tenant IDs and all record-derived values remain bound parameters.
+
+Day 6 does not expose blocking over HTTP, invoke it from ingestion, score
+candidates, make decisions, create entities, or change entity links.

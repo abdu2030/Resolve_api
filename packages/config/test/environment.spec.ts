@@ -23,12 +23,39 @@ describe('validateEnvironment', () => {
   it('returns a typed configuration for complete valid input', () => {
     expect(validateEnvironment(validEnvironment)).toEqual({
       apiPort: 3000,
+      blockingMaxCandidates: 100,
       databaseUrl: validEnvironment.DATABASE_URL,
       nodeEnv: 'development',
       redisHost: 'localhost',
       redisPort: 6379,
       requestBodyLimit: '1mb',
     });
+  });
+
+  it.each([
+    ['minimum', '1', 1],
+    ['maximum', '1000', 1000],
+  ])('accepts the %s candidate limit', (_, value, expected) => {
+    expect(
+      validateEnvironment({ ...validEnvironment, BLOCKING_MAX_CANDIDATES: value })
+        .blockingMaxCandidates,
+    ).toBe(expected);
+  });
+
+  it.each([
+    ['blank', ''],
+    ['zero', '0'],
+    ['negative', '-1'],
+    ['fractional', '1.5'],
+    ['too large', '1001'],
+    ['non-numeric', 'many'],
+  ])('rejects %s BLOCKING_MAX_CANDIDATES', (_, value) => {
+    const message = captureErrorMessage(() =>
+      validateEnvironment({ ...validEnvironment, BLOCKING_MAX_CANDIDATES: value }),
+    );
+
+    expect(message).toContain('BLOCKING_MAX_CANDIDATES');
+    expect(message).not.toContain(value || '__blank_candidate_limit__');
   });
 
   it.each([

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { validateEnvironment } from '@resolve/config';
 
 import { AuthModule } from './auth/auth.module.js';
+import { BlockingModule } from './blocking/blocking.module.js';
 import { HealthModule } from './health/health.module.js';
 import { InfrastructureModule } from './infrastructure/infrastructure.module.js';
 import { RecordsModule } from './records/records.module.js';
@@ -17,6 +18,7 @@ import { SourcesModule } from './sources/sources.module.js';
     }),
     InfrastructureModule,
     AuthModule,
+    BlockingModule,
     HealthModule,
     RecordsModule,
     SourcesModule,
