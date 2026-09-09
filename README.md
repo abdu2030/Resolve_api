@@ -4,9 +4,9 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
-Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint. Week 2 Days 1-2 add deterministic comparison, `features-v1` extraction, and versioned `rules-0.1.0` scoring.
+Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint. Week 2 Days 1-3 add deterministic comparison, `features-v1` extraction, versioned `rules-0.1.0` scoring, and the live resolver pipeline.
 
-The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. Internal `blocking-v1` retrieves only tenant-local, same-type linked entity candidates through bounded indexed passes. The matching package compares normalized records, scores available evidence, applies contradiction policy, and returns an explainable three-way decision. Resolution orchestration and automatic entity linking remain future roadmap work.
+The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. In the same transaction, `blocking-v1` retrieves only tenant-local, same-type linked entity candidates, the matching package compares and scores every supporting record, and the resolver returns an explainable three-way decision. `AUTO_MATCH` links the record to one existing entity, `NO_MATCH` creates and links a new entity, and `REVIEW` creates an open review case without linking the incoming record.
 
 ## Architecture
 
@@ -16,7 +16,7 @@ Resolve is an npm-workspaces modular monolith. The NestJS API handles HTTP and r
 
 `@resolve/matching` is a deterministic, side-effect-free package. It consumes two same-type records that have already passed through `normalizeRecord`, emits `features-v1` evidence, and applies the versioned `rules-0.1.0` scorer. The scorer returns confidence, `AUTO_MATCH`, `REVIEW`, or `NO_MATCH`, a copy of its inputs, and a contribution-level explanation.
 
-The scorer renormalizes weights across available positive evidence, subtracts `0.15` per warning contradiction, clamps confidence to `0..1`, and prevents blocking contradictions from producing `AUTO_MATCH`. PostgreSQL stores candidate evidence in the tenant-scoped `match_features` table.
+The scorer renormalizes weights across available positive evidence, subtracts `0.15` per warning contradiction, clamps confidence to `0..1`, and prevents blocking contradictions from producing `AUTO_MATCH`. PostgreSQL stores candidate evidence in the tenant-scoped `match_features` table. If more than one entity reaches `AUTO_MATCH`, the resolver safely returns `REVIEW` with a blocking ambiguity contradiction.
 
 Run the matching package tests, including golden evidence coverage, with:
 
@@ -114,7 +114,7 @@ $record = Invoke-RestMethod -Method Post -Uri http://localhost:3000/v1/records `
   -Headers $resolveHeaders -ContentType 'application/json' -Body $recordBody
 ```
 
-The first request returns `CREATED` with version 1. Repeating the same logical payload returns `UNCHANGED`. Changing a value returns `UPDATED` and increments the version while retaining prior raw payloads in `source_record_versions`. The same transaction stores `normalization-v1` values in the separate normalized columns.
+The first request returns `CREATED` with version 1 and a `NO_MATCH` resolution that creates a new entity when no candidates exist. Repeating the same logical payload returns `UNCHANGED` with the stored resolution. Changing a value returns `UPDATED` and increments the version while retaining prior raw payloads in `source_record_versions`. The response also includes `entity_id`, `decision`, `confidence`, `explanation`, and `algorithm_version`. The same transaction stores normalization, evidence, and the resulting link or review case.
 
 For explicit request replay, add an idempotency key:
 

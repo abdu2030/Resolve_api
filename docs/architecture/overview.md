@@ -151,17 +151,12 @@ idempotency ledger. Replaying every request must return its original response
 without changing record timestamps or increasing record, version, or ledger
 counts.
 
-Automatic entity creation and matching are outside the implemented roadmap
-boundary, so the test creates explicit fixture entities and links after
-ingestion. The production `CandidateGenerationService` must then return one
-tenant-local candidate for the billing and CSV records, with all four expected
-blocking signals, while excluding the linked entity owned by the other tenant.
-The linked CRM record itself returns no candidates because the billing and CSV
-records remain unlinked and blocking excludes the CRM record from matching
-itself.
-
-Day 7 adds no endpoint, schema migration, scoring rule, matching decision, or
-production-side entity link.
+The Week 2 Day 3 resolver now creates the first entity and links matching
+records during ingestion. The checkpoint therefore also verifies that the CRM
+record receives `NO_MATCH`, the billing and CSV duplicates receive
+`AUTO_MATCH`, and all three resolve to the same tenant-local entity. Direct
+blocking checks still return one bounded candidate with all four expected
+signals and never expose the overlapping entity owned by the other tenant.
 
 ## Week 2 Day 1 matching evidence boundary
 
@@ -255,6 +250,29 @@ The result retains the source feature vector, contradictions, grouped signals,
 weights, contributions, active weight, penalty, thresholds, and policy
 version. The `match_features` table stores these inputs and explanations for
 an exact source-record, candidate-source-record, and candidate-entity
-combination. Composite foreign keys prevent cross-tenant evidence. This
-milestone does not connect scoring to record ingestion, create entity links,
-or expose a new route.
+combination. Composite foreign keys prevent cross-tenant evidence. The scorer
+remains side-effect free; the Day 3 API resolver owns its transactional use.
+
+## Week 2 Day 3 resolver pipeline
+
+`POST /v1/records` runs ingestion, normalization, blocking, comparison,
+scoring, and decision persistence in one PostgreSQL transaction. The focused
+`ResolutionService` uses the transaction-aware candidate generator so a
+failure rolls back the record, raw version, evidence, entity link or review
+case, and idempotency ledger together.
+
+Every supporting source record returned by blocking is compared and persisted
+in `match_features`. Candidate ranking uses full-precision scores and stable
+entity/source-record tie breakers. The public confidence is rounded to four
+decimal places. One automatic candidate links the incoming record to that
+entity. Multiple automatic candidates produce `REVIEW` with a blocking
+`MULTIPLE_AUTO_MATCH_CANDIDATES` contradiction. The strongest review
+candidate creates one open `review_cases` row and no entity link. With no
+acceptable candidate, the resolver creates an empty canonical entity and links
+the incoming record with `NO_MATCH`; canonical field survivorship remains a
+later milestone.
+
+The response adds `entity_id`, `decision`, `confidence`, an optional
+`matched_against` entity ID, structured `explanation`, and
+`algorithm_version` to the ingestion fields. An existing link or review
+case is replayed instead of creating duplicate decision side effects.

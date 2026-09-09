@@ -28,6 +28,12 @@ Addresses may contain `line1`, `line2`, `city`, `region`, `postal_code`, and a t
 ```json
 {
   "record_id": "rec_01JEXAMPLE",
+  "source_id": "src_01JEXAMPLE",
+  "external_id": "contact_9234",
+  "entity_type": "person",
+  "version": 1,
+  "status": "STORED",
+  "operation": "CREATED",
   "entity_id": "ent_01JEXAMPLE",
   "decision": "AUTO_MATCH",
   "confidence": 0.963,
@@ -42,8 +48,9 @@ Addresses may contain `line1`, `line2`, `city`, `region`, `postal_code`, and a t
     "candidate_count": 7
   },
   "algorithm_version": "rules-0.1.0",
-  "created_at": "2026-09-06T10:00:00.000Z"
+  "created_at": "2026-09-06T10:00:00.000Z",
+  "updated_at": "2026-09-06T10:00:00.000Z"
 }
 ```
 
-Decisions are `AUTO_MATCH`, `REVIEW`, or `NO_MATCH`. Confidence stays between 0 and 1. Every result includes structured evidence and an algorithm version.
+Decisions are `AUTO_MATCH`, `REVIEW`, or `NO_MATCH`. Confidence stays between 0 and 1 and is returned to four decimal places. Every result includes structured evidence and an algorithm version. `matched_against` is the proposed or selected existing entity for `AUTO_MATCH` and `REVIEW`; it is omitted for `NO_MATCH`. A review result creates an open review case without linking the incoming record.
