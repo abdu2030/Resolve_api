@@ -64,10 +64,20 @@ interface Day7Fixture {
 }
 
 interface RecordResponseBody {
+  algorithm_version: string;
+  confidence: number;
   record_id: string;
   source_id: string;
   external_id: string;
   entity_type: 'person' | 'company';
+  entity_id: string;
+  decision: 'AUTO_MATCH' | 'NO_MATCH' | 'REVIEW';
+  explanation: {
+    candidate_count: number;
+    contradictions: Array<Record<string, unknown>>;
+    features: Record<string, boolean | null | number | string>;
+  };
+  matched_against?: string;
   version: number;
   status: 'STORED';
   operation: 'CREATED' | 'UPDATED' | 'UNCHANGED';
@@ -175,9 +185,7 @@ describe('Day 7 integration checkpoint', () => {
       fixture.tenant_b.record.request,
     );
 
-    const crmRecord = responseFor(sourceFixture('crm'));
-    tenantAEntity = await insertCanonicalFixture(database, tenantA, crmRecord.record_id);
-    await insertCanonicalFixture(database, tenantB, tenantBRecord.record_id);
+    tenantAEntity = responseFor(sourceFixture('crm')).entity_id;
   });
 
   afterAll(async () => {
@@ -266,6 +274,32 @@ describe('Day 7 integration checkpoint', () => {
     );
   });
 
+  it('resolves the first record to a new entity and auto-matches later duplicates', () => {
+    const crm = responseFor(sourceFixture('crm'));
+    const billing = responseFor(sourceFixture('billing'));
+    const csv = responseFor(sourceFixture('csv_import'));
+
+    expect(crm).toMatchObject({
+      algorithm_version: 'rules-0.1.0',
+      confidence: 0,
+      decision: 'NO_MATCH',
+      entity_id: tenantAEntity,
+      explanation: { candidate_count: 0, contradictions: [], features: {} },
+    });
+    expect(crm).not.toHaveProperty('matched_against');
+    for (const duplicate of [billing, csv]) {
+      expect(duplicate).toMatchObject({
+        algorithm_version: 'rules-0.1.0',
+        decision: 'AUTO_MATCH',
+        entity_id: tenantAEntity,
+        matched_against: tenantAEntity,
+      });
+      expect(duplicate.confidence).toBeGreaterThanOrEqual(0.92);
+    }
+    expect(tenantBRecord).toMatchObject({ decision: 'NO_MATCH', confidence: 0 });
+    expect(tenantBRecord.entity_id).not.toBe(tenantAEntity);
+  });
+
   it('replays each request without adding records, versions, or ledger rows', async () => {
     const timestampsBefore = await recordTimestamps(database, tenantA);
 
@@ -325,35 +359,28 @@ describe('Day 7 integration checkpoint', () => {
 
   it('returns one small tenant-local candidate set for billing and CSV records', async () => {
     const crmRecord = responseFor(sourceFixture('crm'));
-    const expected = {
-      blockingVersion: 'blocking-v1',
-      candidates: [
-        {
-          entityId: tenantAEntity,
-          entityType: 'PERSON',
-          matchedOn: ['EXACT_EMAIL', 'EXACT_PHONE', 'COMPANY_DOMAIN', 'NAME_LOCATION'],
-          supportingRecordIds: [crmRecord.record_id],
-        },
-      ],
-      truncated: false,
-    };
+    const billingRecord = responseFor(sourceFixture('billing'));
+    const csvRecord = responseFor(sourceFixture('csv_import'));
 
-    await expect(
-      candidateGeneration.findCandidates(tenantA, responseFor(sourceFixture('billing')).record_id),
-    ).resolves.toEqual(expected);
-    await expect(
-      candidateGeneration.findCandidates(
-        tenantA,
-        responseFor(sourceFixture('csv_import')).record_id,
-      ),
-    ).resolves.toEqual(expected);
-    await expect(candidateGeneration.findCandidates(tenantA, crmRecord.record_id)).resolves.toEqual(
-      {
+    for (const incoming of [crmRecord, billingRecord, csvRecord]) {
+      const result = await candidateGeneration.findCandidates(tenantA, incoming.record_id);
+      expect(result).toMatchObject({
         blockingVersion: 'blocking-v1',
-        candidates: [],
+        candidates: [
+          {
+            entityId: tenantAEntity,
+            entityType: 'PERSON',
+            matchedOn: ['EXACT_EMAIL', 'EXACT_PHONE', 'COMPANY_DOMAIN', 'NAME_LOCATION'],
+          },
+        ],
         truncated: false,
-      },
-    );
+      });
+      expect(result.candidates[0]!.supportingRecordIds).toHaveLength(1);
+      expect(result.candidates[0]!.supportingRecordIds[0]).not.toBe(incoming.record_id);
+      expect([crmRecord.record_id, billingRecord.record_id, csvRecord.record_id]).toContain(
+        result.candidates[0]!.supportingRecordIds[0],
+      );
+    }
   });
 
   function sourceFixture(sourceName: string): RecordFixture {
@@ -414,27 +441,6 @@ async function insertApiKey(database: Client, tenantId: string, token: string): 
      VALUES ($1, 'Day 7 integration key', $2, $3, $4)`,
     [tenantId, token.split('.')[0], hashApiKey(token), ['sources:write', 'records:write']],
   );
-}
-
-async function insertCanonicalFixture(
-  database: Client,
-  tenantId: string,
-  sourceRecordId: string,
-): Promise<string> {
-  const entity = await database.query<{ id: string }>(
-    `INSERT INTO entities (tenant_id, entity_type, canonical_data)
-     VALUES ($1, 'PERSON', '{}'::jsonb)
-     RETURNING id`,
-    [tenantId],
-  );
-  const entityId = entity.rows[0]!.id;
-  await database.query(
-    `INSERT INTO entity_record_links
-       (tenant_id, entity_id, source_record_id, score, decision, algorithm_version)
-     VALUES ($1, $2, $3, 1, 'AUTO_MATCH', 'day7-fixture-v1')`,
-    [tenantId, entityId, sourceRecordId],
-  );
-  return entityId;
 }
 
 async function recordTimestamps(

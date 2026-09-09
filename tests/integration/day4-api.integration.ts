@@ -53,6 +53,14 @@ interface OpenApiOperation {
 }
 
 interface Day4OpenApiDocument {
+  components: {
+    schemas: {
+      RecordResponseDto: {
+        required: string[];
+        properties: Record<string, { enum?: string[] }>;
+      };
+    };
+  };
   paths: {
     '/v1/sources': { post: OpenApiOperation };
     '/v1/records': { post: OpenApiOperation };
@@ -170,6 +178,19 @@ describe('Day 4 API', () => {
     expect(Object.keys(records.responses)).toEqual(
       expect.arrayContaining(['200', '201', '400', '401', '403', '404', '409']),
     );
+    const recordResponse = document.components.schemas.RecordResponseDto;
+    for (const requiredField of [
+      'record_id',
+      'entity_id',
+      'decision',
+      'confidence',
+      'explanation',
+      'algorithm_version',
+    ]) {
+      expect(recordResponse.required).toContain(requiredField);
+    }
+    expect(recordResponse.required).not.toContain('matched_against');
+    expect(recordResponse.properties.decision?.enum).toEqual(['AUTO_MATCH', 'NO_MATCH', 'REVIEW']);
   });
   it('protects source registration with authentication and scope checks', async () => {
     await request(app.getHttpServer() as Server)
