@@ -15,7 +15,8 @@ BullMQ worker ------> Redis
 `packages/contracts` owns public types and validation, `packages/config`
 owns process configuration, `packages/database` owns the Prisma schema,
 generated client, and migrations, and `packages/normalization` owns pure,
-versioned normalization rules. The API's `blocking` module owns indexed,
+versioned normalization rules. `packages/matching` owns pure comparators and
+versioned evidence extraction. The API's `blocking` module owns indexed,
 bounded candidate generation.
 
 PostgreSQL is the durable source of truth. Redis supplies queue and
@@ -161,3 +162,81 @@ itself.
 
 Day 7 adds no endpoint, schema migration, scoring rule, matching decision, or
 production-side entity link.
+
+## Week 2 Day 1 matching evidence boundary
+
+`@resolve/matching` is a deterministic, side-effect-free package. It accepts
+two `ComparisonRecord` values with the same entity type, reads normalized
+values produced by `@resolve/normalization`, and returns `features-v1` evidence
+plus structured contradictions. Registration identifiers are conservatively
+prepared from the preserved raw payload because `normalization-v1` does not
+project that field. The package has no NestJS, Prisma, Redis, queue, network,
+or persistence dependency and does not mutate its inputs.
+
+The five comparator families are:
+
+1. **Exact equality.** If either prepared value is absent or blank, the result
+   is `null`; otherwise the result is `left === right`. Domain equality uses
+   this formula on normalized domains.
+2. **Normalized edit similarity.** For Unicode code-point sequences, let `d`
+   be their Levenshtein distance and `L = max(length(left), length(right))`.
+   The result is `clamp(1 - d / L, 0, 1)`. Equal present values return `1`;
+   missing values return `null`.
+3. **Jaro-Winkler similarity.** With matched characters `m`, half the number
+   of out-of-order matched characters `t / 2`, and string lengths `|left|`
+   and `|right|`, `J = (m / |left| + m / |right| + (m - t / 2) / m) / 3`.
+   When `J >= 0.7`, the result is
+   `clamp(J + l * 0.1 * (1 - J), 0, 1)`, where `l` is the shared prefix length
+   capped at four; otherwise the result is `J`. No matches return `0`, and
+   missing values return `null`.
+4. **Token-set Jaccard similarity.** Split each prepared string on whitespace
+   into unique tokens `A` and `B`; the result is
+   `|A intersect B| / |A union B|`. Missing values return `null`.
+5. **Structured domain/address comparison.** Domain comparison applies exact
+   equality to normalized domains. Address similarity joins the present
+   `line1`, `line2`, `city`, `region`, `postal_code`, and `country` fields in
+   that fixed order and applies token-set Jaccard. Country comparison applies
+   exact equality to the normalized `address.country` values.
+
+`features-v1` has a stable, null-filled shape so unavailable evidence is
+different from disagreement. Person evidence contains:
+
+- `email_exact`
+- `phone_exact`
+- `name_edit_similarity`
+- `name_jaro_winkler_similarity`
+- `company_name_token_similarity`
+- `company_domain_exact`
+- `address_token_similarity`
+- `country_exact`
+
+Company evidence contains:
+
+- `email_exact`
+- `phone_exact`
+- `company_name_edit_similarity`
+- `company_name_jaro_winkler_similarity`
+- `company_name_token_similarity`
+- `domain_exact`
+- `address_token_similarity`
+- `country_exact`
+- `registration_id_exact`
+
+When both comparable values are present and disagree, `EMAIL_CONFLICT`,
+`PHONE_CONFLICT`, `COMPANY_DOMAIN_CONFLICT`, and `COUNTRY_CONFLICT` are
+warning contradictions. `REGISTRATION_ID_CONFLICT` is blocking because two
+different trusted company registration identifiers must prevent automatic
+matching. Missing values produce neither equality nor a contradiction.
+
+This milestone ends at evidence extraction. A future versioned scoring policy
+may consume these features and contradictions, but it must remain separate
+from the comparators and extractor. Week 2 Day 1 adds no score, decision,
+threshold, database write, entity link, route, or Swagger change. Golden tests
+assert evidence only and deliberately do not assert the dataset's eventual
+decision labels.
+
+Run the milestone package suite with:
+
+```powershell
+npm run test -- packages/matching/test
+```

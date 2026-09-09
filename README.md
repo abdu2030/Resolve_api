@@ -4,13 +4,25 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
-Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint.
+Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint. Week 2 Day 1 adds deterministic comparison and versioned `features-v1` evidence extraction in the pure `@resolve/matching` package.
 
-The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. Internal `blocking-v1` retrieves only tenant-local, same-type linked entity candidates through bounded indexed passes. The Day 7 CRM, billing, and CSV acceptance dataset verifies these behaviors together against PostgreSQL. Comparison, scoring, decisions, and automatic entity linking begin on later roadmap days.
+The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. Internal `blocking-v1` retrieves only tenant-local, same-type linked entity candidates through bounded indexed passes. The Day 7 CRM, billing, and CSV acceptance dataset verifies these behaviors together against PostgreSQL. The matching package now compares normalized records and emits explainable evidence plus contradictions; scoring, decisions, persistence, and automatic entity linking remain future roadmap work.
 
 ## Architecture
 
-Resolve is an npm-workspaces modular monolith. The NestJS API handles HTTP and readiness, the NestJS worker hosts BullMQ background processing, PostgreSQL is durable storage, and Redis provides queue and coordination infrastructure. Shared contracts, configuration, Prisma access, and pure normalization rules live in focused packages. See `docs/architecture/overview.md` for the process boundaries and persistence model.
+Resolve is an npm-workspaces modular monolith. The NestJS API handles HTTP and readiness, the NestJS worker hosts BullMQ background processing, PostgreSQL is durable storage, and Redis provides queue and coordination infrastructure. Shared contracts, configuration, Prisma access, pure normalization rules, and pure matching evidence live in focused packages. See `docs/architecture/overview.md` for the process boundaries, comparator formulas, and persistence model.
+
+## Matching evidence
+
+`@resolve/matching` is a deterministic, side-effect-free package. It consumes two same-type records that have already passed through `normalizeRecord`, compares their normalized fields, and emits `features-v1` evidence and typed contradictions. It does not access PostgreSQL or Redis, calculate an overall score, choose `AUTO_MATCH`, `REVIEW`, or `NO_MATCH`, persist evidence, or link entities.
+
+The comparator families are exact equality, normalized Levenshtein edit similarity, Jaro-Winkler similarity, token-set Jaccard similarity, and structured domain/address comparison. The architecture overview records their exact formulas, every Person and Company `features-v1` field, and the warning/blocking contradiction policy.
+
+Run the matching package tests, including golden evidence coverage, with:
+
+```powershell
+npm run test -- packages/matching/test
+```
 
 ## Environment variables
 
@@ -176,6 +188,7 @@ packages/config                       Environment validation
 packages/database                     Prisma client and schema
 packages/database/prisma/migrations   Ordered PostgreSQL migrations
 packages/normalization                Pure, versioned field and record normalization
+packages/matching                     Pure comparators and features-v1 evidence extraction
 tests/integration                     Migration, API, isolation, blocking-plan, and concurrency tests
 tests/fixtures                        Version-controlled integration input and expected data
 tests/golden-dataset                  Labeled resolution examples
