@@ -11,4 +11,8 @@ export const MATCHING_POLICY = {
     autoMatch: 0.92,
     review: 0.72,
   },
+  contradictions: {
+    warningPenalty: 0.15,
+    blockAutoMatch: true,
+  },
 } as const;

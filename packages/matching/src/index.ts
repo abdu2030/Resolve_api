@@ -14,3 +14,11 @@ export {
   type FeatureExtractionResult,
   type PersonFeatures,
 } from './features.js';
+export {
+  scoreFeatures,
+  type ScoreContributions,
+  type ScoreExplanation,
+  type ScoreSignals,
+  type ScoreSignalName,
+  type ScoringResult,
+} from './scoring.js';

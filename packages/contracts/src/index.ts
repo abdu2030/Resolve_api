@@ -1,3 +1,5 @@
+import 'reflect-metadata';
+
 export * from './record-ingestion-result.js';
 export * from './create-source.dto.js';
 export * from './api-scope.js';
