@@ -4,9 +4,9 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
-Week 1 Days 1-6 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, and bounded candidate blocking.
+Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint.
 
-The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. Internal `blocking-v1` retrieves only tenant-local, same-type linked entity candidates through bounded indexed passes. Comparison, scoring, decisions, and automatic entity linking begin on later roadmap days.
+The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. Internal `blocking-v1` retrieves only tenant-local, same-type linked entity candidates through bounded indexed passes. The Day 7 CRM, billing, and CSV acceptance dataset verifies these behaviors together against PostgreSQL. Comparison, scoring, decisions, and automatic entity linking begin on later roadmap days.
 
 ## Architecture
 
@@ -177,6 +177,7 @@ packages/database                     Prisma client and schema
 packages/database/prisma/migrations   Ordered PostgreSQL migrations
 packages/normalization                Pure, versioned field and record normalization
 tests/integration                     Migration, API, isolation, blocking-plan, and concurrency tests
+tests/fixtures                        Version-controlled integration input and expected data
 tests/golden-dataset                  Labeled resolution examples
 docs                                  Architecture and policy references
 ```

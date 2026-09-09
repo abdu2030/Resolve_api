@@ -134,3 +134,30 @@ schema. Tenant IDs and all record-derived values remain bound parameters.
 
 Day 6 does not expose blocking over HTTP, invoke it from ingestion, score
 candidates, make decisions, create entities, or change entity links.
+
+## Day 7 integration checkpoint
+
+The Day 7 checkpoint exercises the existing API and blocking service as one
+flow against an isolated, fully migrated PostgreSQL schema. Its
+`day7-integration-v1` fixture supplies deliberately different CRM, billing,
+and CSV representations of one person plus an overlapping record owned by a
+second tenant.
+
+The checkpoint registers sources and ingests records through the authenticated
+HTTP API. It then verifies the stored raw payloads, literal
+`normalization-v1` payloads and projections, immutable version rows, and
+idempotency ledger. Replaying every request must return its original response
+without changing record timestamps or increasing record, version, or ledger
+counts.
+
+Automatic entity creation and matching are outside the implemented roadmap
+boundary, so the test creates explicit fixture entities and links after
+ingestion. The production `CandidateGenerationService` must then return one
+tenant-local candidate for the billing and CSV records, with all four expected
+blocking signals, while excluding the linked entity owned by the other tenant.
+The linked CRM record itself returns no candidates because the billing and CSV
+records remain unlinked and blocking excludes the CRM record from matching
+itself.
+
+Day 7 adds no endpoint, schema migration, scoring rule, matching decision, or
+production-side entity link.
