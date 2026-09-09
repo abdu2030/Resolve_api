@@ -20,6 +20,8 @@ interface BlockingLocation {
   country: string;
 }
 
+type CandidateQueryClient = Pick<Prisma.TransactionClient, 'sourceRecord' | '$queryRaw'>;
+
 @Injectable()
 export class CandidateGenerationService {
   private readonly maximum: number;
@@ -33,8 +35,12 @@ export class CandidateGenerationService {
     this.schema = databaseSchema(config.get('databaseUrl', { infer: true }));
   }
 
-  async findCandidates(tenantId: string, sourceRecordId: string): Promise<BlockingResult> {
-    const sourceRecord = await this.prisma.sourceRecord.findUnique({
+  async findCandidates(
+    tenantId: string,
+    sourceRecordId: string,
+    client: CandidateQueryClient = this.prisma,
+  ): Promise<BlockingResult> {
+    const sourceRecord = await client.sourceRecord.findUnique({
       where: { tenantId_id: { tenantId, id: sourceRecordId } },
       select: {
         id: true,
@@ -95,7 +101,7 @@ export class CandidateGenerationService {
     const passes = await Promise.all(
       queries.map(async ({ signal, query }): Promise<BlockingPassRows> => ({
         signal,
-        rows: await this.prisma.$queryRaw<BlockingQueryRow[]>(query),
+        rows: await client.$queryRaw<BlockingQueryRow[]>(query),
       })),
     );
     const collected = collectCandidates(passes, this.maximum);

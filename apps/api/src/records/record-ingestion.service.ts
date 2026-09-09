@@ -1,19 +1,35 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { EntityType, type RecordIngestionResult, type RecordInputDto } from '@resolve/contracts';
+import {
+  EntityType,
+  type RecordIngestionResult,
+  type RecordInputDto,
+  type ResolutionOutcome,
+} from '@resolve/contracts';
 import { DatabaseEntityType, Prisma, type ResolvePrismaClient } from '@resolve/database';
 import { NORMALIZATION_VERSION, normalizeRecord } from '@resolve/normalization';
 
 import { acquireTransactionLock } from '../common/database/advisory-lock.js';
 import { ApiException } from '../common/http/api-exception.js';
 import { PRISMA_CLIENT } from '../infrastructure/infrastructure.tokens.js';
+import { ResolutionService } from '../resolution/resolution.service.js';
 import { hashCanonicalJson } from './canonical-json.js';
 import type { RecordIngestionExecution } from './record-response.dto.js';
 
 const OPERATION = 'POST /v1/records';
+type RecordPersistenceResult = Omit<RecordIngestionResult, keyof ResolutionOutcome>;
+
+interface RecordPersistenceExecution {
+  body: RecordPersistenceResult;
+  httpStatus: number;
+  replayed: false;
+}
 
 @Injectable()
 export class RecordIngestionService {
-  constructor(@Inject(PRISMA_CLIENT) private readonly prisma: ResolvePrismaClient) {}
+  constructor(
+    @Inject(PRISMA_CLIENT) private readonly prisma: ResolvePrismaClient,
+    private readonly resolution: ResolutionService,
+  ) {}
 
   ingest(
     tenantId: string,
@@ -59,7 +75,7 @@ export class RecordIngestionService {
         transaction,
         `record:${tenantId}:${source.id}:${input.external_id}`,
       );
-      const execution = await upsertRecord(
+      const persistence = await upsertRecord(
         transaction,
         tenantId,
         source.id,
@@ -67,6 +83,16 @@ export class RecordIngestionService {
         rawData,
         payloadHash,
       );
+      const resolution = await this.resolution.resolve(
+        transaction,
+        tenantId,
+        persistence.body.record_id,
+      );
+      const execution: RecordIngestionExecution = {
+        body: { ...persistence.body, ...resolution },
+        httpStatus: persistence.httpStatus,
+        replayed: false,
+      };
 
       if (idempotencyKey) {
         await transaction.idempotencyRequest.create({
@@ -92,7 +118,7 @@ async function upsertRecord(
   input: RecordInputDto,
   rawData: Record<string, unknown>,
   payloadHash: string,
-): Promise<RecordIngestionExecution> {
+): Promise<RecordPersistenceExecution> {
   const databaseEntityType =
     input.entity_type === EntityType.Person
       ? DatabaseEntityType.PERSON
@@ -209,7 +235,7 @@ function executionFor(
   entityType: EntityType,
   operation: 'CREATED' | 'UPDATED' | 'UNCHANGED',
   httpStatus: number,
-): RecordIngestionExecution {
+): RecordPersistenceExecution {
   return {
     body: {
       record_id: record.id,
