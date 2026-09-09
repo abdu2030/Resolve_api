@@ -1,0 +1,158 @@
+{
+  "version": "day7-integration-v1",
+  "tenant_a": {
+    "sources": [
+      { "name": "crm", "type": "crm" },
+      { "name": "billing", "type": "billing" },
+      { "name": "csv_import", "type": "csv" }
+    ],
+    "records": [
+      {
+        "idempotency_key": "day7-crm-person-001",
+        "request": {
+          "source": "crm",
+          "external_id": "person-001",
+          "entity_type": "person",
+          "data": {
+            "name": "  Abdulkerim   Hassen  ",
+            "email": "abdul@example.COM",
+            "phone": "+251 911 223 344",
+            "company": " Resolve API ",
+            "company_domain": "https://www.resolve.example/",
+            "address": {
+              "line1": " 10 Africa Avenue ",
+              "city": " Addis   Ababa ",
+              "country": " et "
+            },
+            "attributes": {
+              "crm_stage": "customer",
+              "source_note": "Preserve CRM casing"
+            }
+          }
+        },
+        "expected_normalized": {
+          "name": "abdulkerim hassen",
+          "email": "abdul@example.com",
+          "phone": "+251911223344",
+          "company": {
+            "full": "resolve api",
+            "base": "resolve api",
+            "legal_suffix": null
+          },
+          "company_domain": "resolve.example",
+          "address": {
+            "line1": "10 africa avenue",
+            "line2": null,
+            "city": "addis ababa",
+            "region": null,
+            "postal_code": null,
+            "country": "ET"
+          }
+        }
+      },
+      {
+        "idempotency_key": "day7-billing-person-001",
+        "request": {
+          "source": "billing",
+          "external_id": "customer-7842",
+          "entity_type": "person",
+          "data": {
+            "name": "ABDULKERIM HASSEN",
+            "email": "abdul@EXAMPLE.com",
+            "phone": "0911 223 344",
+            "company": "Resolve API",
+            "company_domain": "resolve.example",
+            "address": {
+              "city": "ADDIS ABABA",
+              "country": "ET"
+            },
+            "attributes": {
+              "invoice_account": "INV-7842"
+            }
+          }
+        },
+        "expected_normalized": {
+          "name": "abdulkerim hassen",
+          "email": "abdul@example.com",
+          "phone": "+251911223344",
+          "company": {
+            "full": "resolve api",
+            "base": "resolve api",
+            "legal_suffix": null
+          },
+          "company_domain": "resolve.example",
+          "address": {
+            "line1": null,
+            "line2": null,
+            "city": "addis ababa",
+            "region": null,
+            "postal_code": null,
+            "country": "ET"
+          }
+        }
+      },
+      {
+        "idempotency_key": "day7-csv-person-001",
+        "request": {
+          "source": "csv_import",
+          "external_id": "row-000391",
+          "entity_type": "person",
+          "data": {
+            "name": " Abdulkerim Hassen ",
+            "email": "abdul@example.com",
+            "phone": "+251-911-223-344",
+            "company": "RESOLVE API",
+            "company_domain": "WWW.RESOLVE.EXAMPLE.",
+            "address": {
+              "city": "Addis Ababa",
+              "country": "et"
+            },
+            "attributes": {
+              "file": "customers-september.csv",
+              "row": 391
+            }
+          }
+        },
+        "expected_normalized": {
+          "name": "abdulkerim hassen",
+          "email": "abdul@example.com",
+          "phone": "+251911223344",
+          "company": {
+            "full": "resolve api",
+            "base": "resolve api",
+            "legal_suffix": null
+          },
+          "company_domain": "resolve.example",
+          "address": {
+            "line1": null,
+            "line2": null,
+            "city": "addis ababa",
+            "region": null,
+            "postal_code": null,
+            "country": "ET"
+          }
+        }
+      }
+    ]
+  },
+  "tenant_b": {
+    "sources": [{ "name": "crm", "type": "crm" }],
+    "record": {
+      "idempotency_key": "day7-other-tenant-person-001",
+      "request": {
+        "source": "crm",
+        "external_id": "person-001",
+        "entity_type": "person",
+        "data": {
+          "name": "Other Tenant Customer",
+          "email": "abdul@example.com",
+          "phone": "+251 911 223 344",
+          "address": {
+            "city": "Addis Ababa",
+            "country": "ET"
+          }
+        }
+      }
+    }
+  }
+}
