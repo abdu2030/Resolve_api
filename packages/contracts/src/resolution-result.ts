@@ -27,3 +27,5 @@ export interface ResolutionResult {
   matched_against?: string;
   record_id: string;
 }
+
+export type ResolutionOutcome = Omit<ResolutionResult, 'record_id' | 'created_at'>;
