@@ -12,7 +12,7 @@
   },
   "scripts": {
     "auth:bootstrap": "tsx --env-file=.env apps/api/src/auth/bootstrap-api-key.ts",
-    "build": "npm run build -w @resolve/contracts && npm run build -w @resolve/config && npm run build -w @resolve/database && npm run build -w @resolve/normalization && npm run build -w @resolve/api && npm run build -w @resolve/worker",
+    "build": "npm run build -w @resolve/contracts && npm run build -w @resolve/config && npm run build -w @resolve/database && npm run build -w @resolve/normalization && npm run build -w @resolve/matching && npm run build -w @resolve/api && npm run build -w @resolve/worker",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
@@ -24,7 +24,7 @@
     "start:worker": "npm run start -w @resolve/worker",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
     "test:integration": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config jest.integration.config.cjs --runInBand",
-    "typecheck": "npm run build -w @resolve/contracts && npm run build -w @resolve/config && npm run build -w @resolve/database && npm run build -w @resolve/normalization && npm run typecheck -w @resolve/api && npm run typecheck -w @resolve/worker"
+    "typecheck": "npm run build -w @resolve/contracts && npm run build -w @resolve/config && npm run build -w @resolve/database && npm run build -w @resolve/normalization && npm run build -w @resolve/matching && npm run typecheck -w @resolve/api && npm run typecheck -w @resolve/worker"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

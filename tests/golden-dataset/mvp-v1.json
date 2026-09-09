@@ -12,7 +12,8 @@
       "record_b": {
         "name": "  ABDULKERIM   HASSEN ",
         "email": "abdul@EXAMPLE.COM",
-        "phone": "0911 223 344"
+        "phone": "0911 223 344",
+        "address": { "country": "ET" }
       },
       "expected_decision": "AUTO_MATCH",
       "rationale": "Exact email and equivalent Ethiopian phone formats provide strong evidence."

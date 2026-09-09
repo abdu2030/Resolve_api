@@ -14,6 +14,7 @@ module.exports = {
     '^@resolve/config$': '<rootDir>/packages/config/src/index.ts',
     '^@resolve/contracts$': '<rootDir>/packages/contracts/src/index.ts',
     '^@resolve/database$': '<rootDir>/packages/database/src/index.ts',
+    '^@resolve/matching$': '<rootDir>/packages/matching/src/index.ts',
     '^@resolve/normalization$': '<rootDir>/packages/normalization/src/index.ts',
   },
   roots: ['<rootDir>/apps', '<rootDir>/packages', '<rootDir>/tests'],
