@@ -228,15 +228,33 @@ warning contradictions. `REGISTRATION_ID_CONFLICT` is blocking because two
 different trusted company registration identifiers must prevent automatic
 matching. Missing values produce neither equality nor a contradiction.
 
-This milestone ends at evidence extraction. A future versioned scoring policy
-may consume these features and contradictions, but it must remain separate
-from the comparators and extractor. Week 2 Day 1 adds no score, decision,
-threshold, database write, entity link, route, or Swagger change. Golden tests
-assert evidence only and deliberately do not assert the dataset's eventual
-decision labels.
+Week 2 Day 1 ends at evidence extraction. Its golden tests assert evidence
+without making a decision.
 
 Run the milestone package suite with:
 
 ```powershell
 npm run test -- packages/matching/test
 ```
+
+## Week 2 Day 2 scoring and decision policy
+
+`scoreFeatures` consumes one `features-v1` result and applies
+`rules-0.1.0`. It groups fields into email, phone, name, company, and
+location signals. Each group uses its strongest available positive signal.
+The scorer renormalizes the `0.40`, `0.25`, `0.20`, `0.10`, and `0.05`
+weights across groups with evidence, so missing fields do not count as
+disagreement.
+
+Each warning contradiction subtracts `0.15`. The scorer clamps the result to
+`0..1` and applies inclusive thresholds: `0.92` selects `AUTO_MATCH`,
+`0.72` selects `REVIEW`, and lower scores select `NO_MATCH`. A blocking
+contradiction changes an otherwise automatic match to `REVIEW`.
+
+The result retains the source feature vector, contradictions, grouped signals,
+weights, contributions, active weight, penalty, thresholds, and policy
+version. The `match_features` table stores these inputs and explanations for
+an exact source-record, candidate-source-record, and candidate-entity
+combination. Composite foreign keys prevent cross-tenant evidence. This
+milestone does not connect scoring to record ingestion, create entity links,
+or expose a new route.
