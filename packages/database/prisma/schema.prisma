@@ -30,20 +30,28 @@ enum MatchDecision {
   @@map("match_decision")
 }
 
+enum ReviewCaseStatus {
+  OPEN
+  RESOLVED
+
+  @@map("review_case_status")
+}
+
 model Tenant {
-  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name              String             @db.VarChar(120)
-  status            TenantStatus       @default(ACTIVE)
-  plan              String             @default("free") @db.VarChar(50)
-  planMetadata      Json               @default("{}") @map("plan_metadata")
-  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  apiKeys           ApiKey[]
-  sourceSystems     SourceSystem[]
-  sourceRecords     SourceRecord[]
-  entities          Entity[]
-  entityRecordLinks EntityRecordLink[]
-  matchFeatures     MatchFeature[]
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String                @db.VarChar(120)
+  status               TenantStatus          @default(ACTIVE)
+  plan                 String                @default("free") @db.VarChar(50)
+  planMetadata         Json                  @default("{}") @map("plan_metadata")
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  apiKeys              ApiKey[]
+  sourceSystems        SourceSystem[]
+  sourceRecords        SourceRecord[]
+  entities             Entity[]
+  entityRecordLinks    EntityRecordLink[]
+  matchFeatures        MatchFeature[]
+  reviewCases          ReviewCase[]
   sourceRecordVersions SourceRecordVersion[]
   idempotencyRequests  IdempotencyRequest[]
 
@@ -83,28 +91,30 @@ model SourceSystem {
 }
 
 model SourceRecord {
-  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId             String            @map("tenant_id") @db.Uuid
-  sourceSystemId       String            @map("source_system_id") @db.Uuid
-  externalId           String            @map("external_id") @db.VarChar(255)
-  entityType           EntityType        @map("entity_type")
-  rawPayload           Json              @map("raw_payload")
-  rawPayloadHash       String?           @map("raw_payload_hash") @db.Char(64)
-  currentVersion       Int               @default(1) @map("current_version")
-  normalizedPayload    Json?             @map("normalized_payload")
-  normalizationVersion String?           @map("normalization_version") @db.VarChar(50)
-  normalizedEmail      String?           @map("normalized_email") @db.VarChar(320)
-  normalizedPhone      String?           @map("normalized_phone") @db.VarChar(32)
-  companyDomain        String?           @map("company_domain") @db.VarChar(253)
-  normalizedNamePrefix String?           @map("normalized_name_prefix") @db.VarChar(64)
-  createdAt            DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
-  tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "source_records_tenant_fkey")
-  sourceSystem         SourceSystem      @relation(fields: [tenantId, sourceSystemId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "source_records_tenant_source_system_fkey")
-  entityRecordLink     EntityRecordLink?
-  matchFeaturesAsSource    MatchFeature[] @relation("MatchFeatureSourceRecord")
-  matchFeaturesAsCandidate MatchFeature[] @relation("MatchFeatureCandidateRecord")
-  versions             SourceRecordVersion[]
+  id                       String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                 String                @map("tenant_id") @db.Uuid
+  sourceSystemId           String                @map("source_system_id") @db.Uuid
+  externalId               String                @map("external_id") @db.VarChar(255)
+  entityType               EntityType            @map("entity_type")
+  rawPayload               Json                  @map("raw_payload")
+  rawPayloadHash           String?               @map("raw_payload_hash") @db.Char(64)
+  currentVersion           Int                   @default(1) @map("current_version")
+  normalizedPayload        Json?                 @map("normalized_payload")
+  normalizationVersion     String?               @map("normalization_version") @db.VarChar(50)
+  normalizedEmail          String?               @map("normalized_email") @db.VarChar(320)
+  normalizedPhone          String?               @map("normalized_phone") @db.VarChar(32)
+  companyDomain            String?               @map("company_domain") @db.VarChar(253)
+  normalizedNamePrefix     String?               @map("normalized_name_prefix") @db.VarChar(64)
+  createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant                   Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "source_records_tenant_fkey")
+  sourceSystem             SourceSystem          @relation(fields: [tenantId, sourceSystemId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "source_records_tenant_source_system_fkey")
+  entityRecordLink         EntityRecordLink?
+  matchFeaturesAsSource    MatchFeature[]        @relation("MatchFeatureSourceRecord")
+  matchFeaturesAsCandidate MatchFeature[]        @relation("MatchFeatureCandidateRecord")
+  reviewCasesAsSource      ReviewCase[]          @relation("ReviewCaseSourceRecord")
+  reviewCasesAsCandidate   ReviewCase[]          @relation("ReviewCaseCandidateRecord")
+  versions                 SourceRecordVersion[]
 
   @@unique([tenantId, id], map: "source_records_tenant_id_key")
   @@unique([tenantId, sourceSystemId, externalId], map: "source_records_tenant_source_external_key")
@@ -156,6 +166,7 @@ model Entity {
   tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "entities_tenant_fkey")
   entityRecordLinks EntityRecordLink[]
   matchFeatures     MatchFeature[]
+  reviewCases       ReviewCase[]
 
   @@unique([tenantId, id], map: "entities_tenant_id_key")
   @@index([tenantId, entityType], map: "entities_tenant_entity_type_idx")
@@ -170,6 +181,7 @@ model EntityRecordLink {
   score            Decimal       @db.Decimal(5, 4)
   decision         MatchDecision
   algorithmVersion String        @map("algorithm_version") @db.VarChar(50)
+  explanation      Json          @default("{\"candidate_count\":0,\"features\":{},\"contradictions\":[]}")
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_fkey")
@@ -182,25 +194,53 @@ model EntityRecordLink {
 }
 
 model MatchFeature {
-  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId          String        @map("tenant_id") @db.Uuid
-  sourceRecordId    String        @map("source_record_id") @db.Uuid
-  candidateSourceRecordId String   @map("candidate_source_record_id") @db.Uuid
-  candidateEntityId String        @map("candidate_entity_id") @db.Uuid
-  featureVersion    String        @map("feature_version") @db.VarChar(50)
-  algorithmVersion  String        @map("algorithm_version") @db.VarChar(50)
-  scoreInputs       Json          @map("score_inputs")
-  explanation       Json
-  score             Decimal       @db.Decimal(5, 4)
-  decision          MatchDecision
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "match_features_tenant_fkey")
-  sourceRecord      SourceRecord  @relation("MatchFeatureSourceRecord", fields: [tenantId, sourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "match_features_tenant_source_record_fkey")
-  candidateSourceRecord SourceRecord @relation("MatchFeatureCandidateRecord", fields: [tenantId, candidateSourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "match_features_tenant_candidate_record_fkey")
-  candidateEntity   Entity        @relation(fields: [tenantId, candidateEntityId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "match_features_tenant_candidate_entity_fkey")
+  id                      String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                String        @map("tenant_id") @db.Uuid
+  sourceRecordId          String        @map("source_record_id") @db.Uuid
+  candidateSourceRecordId String        @map("candidate_source_record_id") @db.Uuid
+  candidateEntityId       String        @map("candidate_entity_id") @db.Uuid
+  featureVersion          String        @map("feature_version") @db.VarChar(50)
+  algorithmVersion        String        @map("algorithm_version") @db.VarChar(50)
+  scoreInputs             Json          @map("score_inputs")
+  explanation             Json
+  score                   Decimal       @db.Decimal(5, 4)
+  decision                MatchDecision
+  createdAt               DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  tenant                  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "match_features_tenant_fkey")
+  sourceRecord            SourceRecord  @relation("MatchFeatureSourceRecord", fields: [tenantId, sourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "match_features_tenant_source_record_fkey")
+  candidateSourceRecord   SourceRecord  @relation("MatchFeatureCandidateRecord", fields: [tenantId, candidateSourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "match_features_tenant_candidate_record_fkey")
+  candidateEntity         Entity        @relation(fields: [tenantId, candidateEntityId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "match_features_tenant_candidate_entity_fkey")
+  reviewCase              ReviewCase?
 
+  @@unique([tenantId, id, sourceRecordId, candidateSourceRecordId, candidateEntityId], map: "match_features_review_identity_key")
   @@index([tenantId, sourceRecordId], map: "match_features_tenant_source_record_idx")
   @@index([tenantId, candidateSourceRecordId], map: "match_features_tenant_candidate_record_idx")
   @@index([tenantId, candidateEntityId], map: "match_features_tenant_candidate_entity_idx")
   @@map("match_features")
+}
+
+model ReviewCase {
+  id                      String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                String           @map("tenant_id") @db.Uuid
+  sourceRecordId          String           @map("source_record_id") @db.Uuid
+  candidateEntityId       String           @map("candidate_entity_id") @db.Uuid
+  candidateSourceRecordId String           @map("candidate_source_record_id") @db.Uuid
+  matchFeatureId          String           @map("match_feature_id") @db.Uuid
+  status                  ReviewCaseStatus @default(OPEN)
+  score                   Decimal          @db.Decimal(5, 4)
+  explanation             Json
+  algorithmVersion        String           @map("algorithm_version") @db.VarChar(50)
+  createdAt               DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  tenant                  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_tenant_fkey")
+  sourceRecord            SourceRecord     @relation("ReviewCaseSourceRecord", fields: [tenantId, sourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_tenant_source_record_fkey")
+  candidateSourceRecord   SourceRecord     @relation("ReviewCaseCandidateRecord", fields: [tenantId, candidateSourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_tenant_candidate_record_fkey")
+  candidateEntity         Entity           @relation(fields: [tenantId, candidateEntityId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_tenant_candidate_entity_fkey")
+  matchFeature            MatchFeature     @relation(fields: [tenantId, matchFeatureId, sourceRecordId, candidateSourceRecordId, candidateEntityId], references: [tenantId, id, sourceRecordId, candidateSourceRecordId, candidateEntityId], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_selected_match_feature_fkey")
+
+  @@unique([tenantId, sourceRecordId], map: "review_cases_tenant_source_record_key")
+  @@unique([tenantId, matchFeatureId, sourceRecordId, candidateSourceRecordId, candidateEntityId], map: "review_cases_selected_match_feature_key")
+  @@index([tenantId, status, createdAt], map: "review_cases_tenant_status_created_idx")
+  @@index([tenantId, candidateEntityId], map: "review_cases_tenant_candidate_entity_idx")
+  @@map("review_cases")
 }
