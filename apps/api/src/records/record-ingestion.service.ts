@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   EntityType,
+  ResolutionDecision,
   type RecordIngestionResult,
   type RecordInputDto,
   type ResolutionOutcome,
@@ -10,9 +11,10 @@ import { NORMALIZATION_VERSION, normalizeRecord } from '@resolve/normalization';
 
 import { acquireTransactionLock } from '../common/database/advisory-lock.js';
 import { ApiException } from '../common/http/api-exception.js';
+import { hashCanonicalJson } from '../common/json/canonical-json.js';
+import { CanonicalizationService } from '../canonicalization/canonicalization.service.js';
 import { PRISMA_CLIENT } from '../infrastructure/infrastructure.tokens.js';
 import { ResolutionService } from '../resolution/resolution.service.js';
-import { hashCanonicalJson } from './canonical-json.js';
 import type { RecordIngestionExecution } from './record-response.dto.js';
 
 const OPERATION = 'POST /v1/records';
@@ -29,6 +31,7 @@ export class RecordIngestionService {
   constructor(
     @Inject(PRISMA_CLIENT) private readonly prisma: ResolvePrismaClient,
     private readonly resolution: ResolutionService,
+    private readonly canonicalization: CanonicalizationService,
   ) {}
 
   ingest(
@@ -88,6 +91,18 @@ export class RecordIngestionService {
         tenantId,
         persistence.body.record_id,
       );
+      if (
+        resolution.decision === ResolutionDecision.AutoMatch ||
+        resolution.decision === ResolutionDecision.NoMatch
+      ) {
+        await this.canonicalization.canonicalizeLinkedEntity(transaction, {
+          tenantId,
+          entityId: resolution.entity_id,
+          sourceRecordId: persistence.body.record_id,
+          ingestionOperation: persistence.body.operation,
+          resolutionDecision: resolution.decision,
+        });
+      }
       const execution: RecordIngestionExecution = {
         body: { ...persistence.body, ...resolution },
         httpStatus: persistence.httpStatus,
