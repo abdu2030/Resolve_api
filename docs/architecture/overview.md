@@ -70,6 +70,10 @@ and inactive tenants, and never accepts a tenant ID from the request body.
 `POST /v1/sources` requires `sources:write`; `POST /v1/records` requires
 `records:write`.
 
+All three `/v1/entities/:entityId` read routes require `entities:read`.
+Bootstrap keys include this scope by default; narrower keys must request it
+explicitly. Entity IDs never grant access across tenant boundaries.
+
 Source registration and record ingestion use PostgreSQL transactions and
 transaction-scoped advisory locks. Source locks key on tenant and source name.
 Ingestion acquires an optional tenant/idempotency lock before the
@@ -268,11 +272,70 @@ decimal places. One automatic candidate links the incoming record to that
 entity. Multiple automatic candidates produce `REVIEW` with a blocking
 `MULTIPLE_AUTO_MATCH_CANDIDATES` contradiction. The strongest review
 candidate creates one open `review_cases` row and no entity link. With no
-acceptable candidate, the resolver creates an empty canonical entity and links
-the incoming record with `NO_MATCH`; canonical field survivorship remains a
-later milestone.
+acceptable candidate, the resolver creates an entity and links the incoming
+record with `NO_MATCH`. The Day 4 canonicalizer now fills that entity in the
+same transaction.
 
 The response adds `entity_id`, `decision`, `confidence`, an optional
 `matched_against` entity ID, structured `explanation`, and
 `algorithm_version` to the ingestion fields. An existing link or review
 case is replayed instead of creating duplicate decision side effects.
+
+## Week 2 Day 4 canonicalization and entity reads
+
+The API's canonicalization module applies pure, deterministic
+`canonicalization-v1` survivorship synchronously inside ingestion:
+
+```text
+resolution link
+  -> entity advisory lock
+  -> linked-record projection
+  -> deterministic survivorship
+  -> entity + current provenance + immutable snapshot
+```
+
+After creating or confirming an accepted link, the canonicalizer acquires a
+transaction-scoped PostgreSQL advisory lock derived from tenant and entity
+IDs. It loads that tenant's currently linked records, latest normalized/raw
+payloads, and source metadata. Field candidates rank by lower source priority,
+higher field completeness, newer source-record update time, then smaller record
+ID. Address components are independent. Lower source priority is more
+authoritative; registration defaults to `100` and enforces `0..1000` in both
+validation and the database.
+
+`entities.canonical_version` starts at zero. A canonical data or provenance
+change increments it, updates `canonical_data`, replaces current
+`entity_field_provenance`, and appends one `entity_canonical_versions` snapshot
+atomically. Snapshots retain winning raw/canonical values, source identity,
+selection rule, completeness, observation time, normalization version, policy
+version, and trigger. Composite tenant foreign keys protect all new relations;
+the unique entity/version constraint is a final concurrency guard. PostgreSQL
+remains the durable source of truth; no Redis cache or queue is authoritative
+for canonical state.
+
+`NO_MATCH` creates initial canonical state; `AUTO_MATCH` recomputes after
+linking; changed linked payloads recompute the existing entity. `REVIEW` does
+not canonicalize because no link is accepted. Unchanged positive-version
+replays skip recomputation. A recomputation with identical data and provenance
+creates no history. Legacy version-zero entities retain their stored JSON and
+gain one `LEGACY_BACKFILL` on the next qualifying ingestion. Successful
+idempotency-key replay returns its ledger response without running the workflow.
+Canonicalization failure rolls back the entire ingestion transaction, including
+raw versions, resolution evidence, links, and the idempotency ledger.
+
+The entities module has a thin controller, tenant-scoped query service,
+validated bounded pagination, and Swagger DTOs. `GET /v1/entities/:entityId`
+reads canonical data, current provenance, record count, and latest policy
+version in an interactive `RepeatableRead` transaction so concurrent commits
+cannot mix versions in one response. The records route returns current raw and
+normalized audit payloads with stored link evidence, ordered by link creation
+time and ID descending. The history route returns immutable snapshots ordered
+by version descending. Both pages default to 25 and cap at 100, using opaque
+keyset cursors and one extra row to detect the next page.
+
+All queries use authenticated tenant context; missing and cross-tenant IDs
+return the same `404`. Reads perform no backfill or write. Version-zero reads
+return the stored canonical object, empty provenance/history, and a null policy
+version. Raw payloads are exposed only for authenticated audit use and must not
+be logged. Merge/split, manual locks, source-priority updates, and background
+recomputation remain outside this milestone.
