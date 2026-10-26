@@ -5,6 +5,7 @@ import { validate, type ValidationError } from 'class-validator';
 
 import {
   AddressInputDto,
+  API_SCOPES,
   CompanyInputDto,
   CreateSourceDto,
   MATCHING_POLICY,
@@ -68,6 +69,19 @@ describe('MVP input contracts', () => {
     await expect(
       validatePayload(CreateSourceDto, { name: 'Billing', type: 'api' }),
     ).resolves.not.toHaveLength(0);
+  });
+
+  it('validates the source priority range', async () => {
+    await expect(
+      validatePayload(CreateSourceDto, { name: 'crm', type: 'api', priority: 0 }),
+    ).resolves.toEqual([]);
+    await expect(
+      validatePayload(CreateSourceDto, { name: 'crm', type: 'api', priority: 1001 }),
+    ).resolves.not.toHaveLength(0);
+  });
+
+  it('exports entity read authorization scope', () => {
+    expect(API_SCOPES).toContain('entities:read');
   });
 
   it('validates record data using its declared entity type', async () => {

@@ -30,6 +30,7 @@ interface SourceResponseBody {
   source_id: string;
   name: string;
   type: string;
+  priority: number;
   created_at: string;
 }
 
@@ -211,7 +212,7 @@ describe('Day 4 API', () => {
       .send({ name: 'crm', type: 'api' })
       .expect(201);
     const createdBody = bodyOf<SourceResponseBody>(created);
-    expect(createdBody).toMatchObject({ name: 'crm', type: 'api' });
+    expect(createdBody).toMatchObject({ name: 'crm', type: 'api', priority: 100 });
     expect(createdBody.source_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(createdBody.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
@@ -236,6 +237,30 @@ describe('Day 4 API', () => {
       });
   });
 
+  it('replays an explicit source priority and rejects a priority mismatch', async () => {
+    const created = await request(app.getHttpServer() as Server)
+      .post('/v1/sources')
+      .set('Authorization', `Bearer ${fullToken}`)
+      .send({ name: 'priority-source', type: 'api', priority: 10 })
+      .expect(201);
+
+    expect(bodyOf<SourceResponseBody>(created)).toMatchObject({
+      name: 'priority-source',
+      type: 'api',
+      priority: 10,
+    });
+
+    await request(app.getHttpServer() as Server)
+      .post('/v1/sources')
+      .set('Authorization', `Bearer ${fullToken}`)
+      .send({ name: 'priority-source', type: 'api', priority: 100 })
+      .expect(409, {
+        error: {
+          code: 'SOURCE_PRIORITY_CONFLICT',
+          message: 'A source with this name already exists with a different priority',
+        },
+      });
+  });
   it('allows another tenant to use the same source name', async () => {
     const response = await request(app.getHttpServer() as Server)
       .post('/v1/sources')

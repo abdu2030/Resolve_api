@@ -34,6 +34,7 @@ export class SourcesController {
       properties: {
         name: { type: 'string', pattern: '^[a-z][a-z0-9_-]*$', maxLength: 120, example: 'crm' },
         type: { type: 'string', pattern: '^[a-z][a-z0-9_-]*$', maxLength: 50, example: 'api' },
+        priority: { type: 'integer', minimum: 0, maximum: 1000, example: 100 },
       },
     },
   })

@@ -13,6 +13,7 @@ export class SourceRegistrationService {
 
   register(tenantId: string, input: CreateSourceDto): Promise<SourceRegistrationResult> {
     return this.prisma.$transaction(async (transaction) => {
+      const priority = input.priority ?? 100;
       await acquireTransactionLock(transaction, `source:${tenantId}:${input.name}`);
       const existing = await transaction.sourceSystem.findUnique({
         where: { tenantId_name: { tenantId, name: input.name } },
@@ -25,10 +26,17 @@ export class SourceRegistrationService {
             'A source with this name already exists with a different type',
           );
         }
+        if (existing.priority !== priority) {
+          throw new ApiException(
+            409,
+            'SOURCE_PRIORITY_CONFLICT',
+            'A source with this name already exists with a different priority',
+          );
+        }
         return { body: mapSource(existing), created: false };
       }
       const created = await transaction.sourceSystem.create({
-        data: { tenantId, name: input.name, type: input.type },
+        data: { tenantId, name: input.name, type: input.type, priority },
       });
       return { body: mapSource(created), created: true };
     });
@@ -39,12 +47,14 @@ function mapSource(source: {
   id: string;
   name: string;
   type: string;
+  priority: number;
   createdAt: Date;
 }): SourceResponseDto {
   return {
     source_id: source.id,
     name: source.name,
     type: source.type,
+    priority: source.priority,
     created_at: source.createdAt.toISOString(),
   };
 }

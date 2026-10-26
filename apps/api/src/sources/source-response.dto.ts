@@ -10,6 +10,9 @@ export class SourceResponseDto {
   @ApiProperty({ example: 'api' })
   type!: string;
 
+  @ApiProperty({ minimum: 0, maximum: 1000, example: 100 })
+  priority!: number;
+
   @ApiProperty({ format: 'date-time' })
   created_at!: string;
 }

@@ -16,7 +16,14 @@ const expectedTables = [
   'source_systems',
   'tenants',
 ];
-const expectedEnums = ['entity_type', 'match_decision', 'review_case_status', 'tenant_status'];
+const expectedEnums = [
+  'canonical_selection_rule',
+  'canonical_trigger_operation',
+  'entity_type',
+  'match_decision',
+  'review_case_status',
+  'tenant_status',
+];
 const expectedIndexes = [
   'api_keys_key_hash_key',
   'entity_record_links_tenant_entity_idx',

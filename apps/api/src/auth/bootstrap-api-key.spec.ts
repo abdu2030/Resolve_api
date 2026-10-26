@@ -1,13 +1,13 @@
 import { parseBootstrapArguments } from './bootstrap-api-key.js';
 
 describe('API-key bootstrap arguments', () => {
-  it('defaults to the two Day 4 write scopes', () => {
+  it('defaults to source and record write scopes plus entity read scope', () => {
     expect(
       parseBootstrapArguments(['--tenant-name', 'Local Demo', '--environment', 'test']),
     ).toEqual({
       environment: 'test',
       keyName: 'Bootstrap key',
-      scopes: ['sources:write', 'records:write'],
+      scopes: ['sources:write', 'records:write', 'entities:read'],
       tenantName: 'Local Demo',
     });
   });
