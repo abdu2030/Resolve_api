@@ -17,6 +17,7 @@ import type { CandidateScore, ResolutionExecution } from './resolution.types.js'
 
 interface LoadedComparisonRecord extends ComparisonRecord {
   id: string;
+  currentVersion: number;
 }
 
 @Injectable()
@@ -38,16 +39,22 @@ export class ResolutionService {
         algorithmVersion: true,
         explanation: true,
         lastEntityOperationId: true,
+        reviewDecision: { select: { id: true, decision: true } },
       },
     });
     if (storedLink) {
-      const decision = contractDecision(storedLink.decision);
+      const decision = storedLink.reviewDecision
+        ? storedLink.reviewDecision.decision === 'APPROVE'
+          ? ResolutionDecision.AutoMatch
+          : ResolutionDecision.NoMatch
+        : contractDecision(storedLink.decision);
       return {
         entity_id: storedLink.entityId,
         decision,
         confidence: Number(storedLink.score),
         explanation: storedExplanation(storedLink.explanation),
         algorithm_version: storedLink.algorithmVersion,
+        ...(storedLink.reviewDecision ? { review_decision_id: storedLink.reviewDecision.id } : {}),
         ...(storedLink.lastEntityOperationId
           ? { entity_operation_id: storedLink.lastEntityOperationId }
           : {}),
@@ -121,6 +128,7 @@ export class ResolutionService {
 
     if (selection.decision === ResolutionDecision.Review) {
       const selected = requireSelected(selection.selected);
+      if (!selected.supportingRecordVersion) throw new ResolutionDataIntegrityError();
       await transaction.reviewCase.create({
         data: {
           tenantId,
@@ -128,6 +136,8 @@ export class ResolutionService {
           candidateEntityId: selected.entityId,
           candidateSourceRecordId: selected.supportingRecordId,
           matchFeatureId: selected.matchFeatureId,
+          sourceRecordVersion: incoming.currentVersion,
+          candidateRecordVersion: selected.supportingRecordVersion,
           score: confidence,
           explanation: explanation as unknown as Prisma.InputJsonObject,
           algorithmVersion: MATCHING_POLICY.version,
@@ -186,6 +196,7 @@ async function compareAndPersist(
     where: { tenantId, id: { in: supportingIds } },
     select: {
       id: true,
+      currentVersion: true,
       entityType: true,
       rawPayload: true,
       normalizedPayload: true,
@@ -222,6 +233,7 @@ async function compareAndPersist(
         select: { id: true },
       });
       scores.push({
+        supportingRecordVersion: supporting.currentVersion,
         entityId: candidate.entityId,
         supportingRecordId,
         matchFeatureId: evidence.id,
@@ -245,6 +257,7 @@ async function loadComparisonRecord(
     where: { tenantId_id: { tenantId, id: sourceRecordId } },
     select: {
       id: true,
+      currentVersion: true,
       entityType: true,
       rawPayload: true,
       normalizedPayload: true,
@@ -256,6 +269,7 @@ async function loadComparisonRecord(
 
 function comparisonRecord(record: {
   id: string;
+  currentVersion: number;
   entityType: DatabaseEntityType;
   rawPayload: Prisma.JsonValue;
   normalizedPayload: Prisma.JsonValue | null;
@@ -265,6 +279,7 @@ function comparisonRecord(record: {
   if (!rawPayload || !normalizedPayload) throw new ResolutionDataIntegrityError();
   return {
     id: record.id,
+    currentVersion: record.currentVersion,
     entityType: contractEntityType(record.entityType),
     rawPayload,
     normalizedPayload,

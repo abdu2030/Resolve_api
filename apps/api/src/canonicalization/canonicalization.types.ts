@@ -38,6 +38,13 @@ export interface CanonicalProjection {
 }
 
 export type CanonicalTriggerOperation =
-  'ENTITY_CREATED' | 'RECORD_LINKED' | 'RECORD_UPDATED' | 'LEGACY_BACKFILL' | 'MERGE' | 'SPLIT';
+  | 'ENTITY_CREATED'
+  | 'RECORD_LINKED'
+  | 'RECORD_UPDATED'
+  | 'LEGACY_BACKFILL'
+  | 'MERGE'
+  | 'SPLIT'
+  | 'REVIEW_APPROVED'
+  | 'REVIEW_REJECTED';
 
 export type CanonicalEntityType = EntityType;

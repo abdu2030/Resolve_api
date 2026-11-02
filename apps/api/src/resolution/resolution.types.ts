@@ -6,6 +6,7 @@ import type {
 } from '@resolve/contracts';
 
 export interface CandidateScore {
+  supportingRecordVersion?: number;
   entityId: string;
   supportingRecordId: string;
   matchFeatureId: string;

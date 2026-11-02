@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { EntityType, ResolutionDecision } from '@resolve/contracts';
 
 import { EntityOperationResponseDto } from './entity-operation-response.dto.js';
+import { ReviewDecisionResponseDto } from '../reviews/review-response.dto.js';
 
 class LinkedRecordSourceDto {
   @ApiProperty({ format: 'uuid' }) source_system_id!: string;
@@ -11,6 +12,7 @@ class LinkedRecordSourceDto {
 }
 
 class LinkedRecordLinkDto {
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) review_decision_id!: string | null;
   @ApiProperty({ enum: ResolutionDecision }) decision!: ResolutionDecision;
   @ApiProperty({ minimum: 0, maximum: 1 }) confidence!: number;
   @ApiProperty() algorithm_version!: string;
@@ -50,18 +52,30 @@ class EntityHistoryTriggerDto {
       'LEGACY_BACKFILL',
       'MERGE',
       'SPLIT',
+      'REVIEW_APPROVED',
+      'REVIEW_REJECTED',
     ],
   })
   operation!:
-    'ENTITY_CREATED' | 'RECORD_LINKED' | 'RECORD_UPDATED' | 'LEGACY_BACKFILL' | 'MERGE' | 'SPLIT';
+    | 'ENTITY_CREATED'
+    | 'RECORD_LINKED'
+    | 'RECORD_UPDATED'
+    | 'LEGACY_BACKFILL'
+    | 'MERGE'
+    | 'SPLIT'
+    | 'REVIEW_APPROVED'
+    | 'REVIEW_REJECTED';
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true, type: String })
   source_record_id!: string | null;
+  @ApiProperty({ type: String, format: 'uuid', nullable: true }) review_decision_id!: string | null;
   @ApiProperty({ type: String, format: 'uuid', nullable: true }) entity_operation_id!:
     string | null;
 }
 
 export class EntityHistoryResponseDto {
+  @ApiProperty({ type: ReviewDecisionResponseDto, nullable: true })
+  review_decision!: ReviewDecisionResponseDto | null;
   @ApiProperty({ minimum: 1 }) version!: number;
   @ApiProperty({ type: 'object', additionalProperties: true })
   canonical_data!: Record<string, unknown>;

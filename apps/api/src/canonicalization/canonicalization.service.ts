@@ -33,6 +33,14 @@ export interface RecomputeAfterEntityOperationInput {
   operation: 'MERGE' | 'SPLIT';
 }
 
+export interface CanonicalizeAfterReviewInput {
+  tenantId: string;
+  entityId: string;
+  sourceRecordId: string;
+  reviewDecisionId: string;
+  decision: 'APPROVE' | 'REJECT';
+}
+
 @Injectable()
 export class CanonicalizationService {
   async canonicalizeLinkedEntity(
@@ -49,11 +57,22 @@ export class CanonicalizationService {
     await this.recompute(transaction, input);
   }
 
+  async canonicalizeAfterReview(
+    transaction: Prisma.TransactionClient,
+    input: CanonicalizeAfterReviewInput,
+  ): Promise<void> {
+    await this.recompute(transaction, input);
+  }
+
   private async recompute(
     transaction: Prisma.TransactionClient,
-    input: CanonicalizeLinkedEntityInput | RecomputeAfterEntityOperationInput,
+    input:
+      | CanonicalizeLinkedEntityInput
+      | RecomputeAfterEntityOperationInput
+      | CanonicalizeAfterReviewInput,
   ): Promise<void> {
     const structural = 'entityOperationId' in input;
+    const reviewed = 'reviewDecisionId' in input;
     await acquireTransactionLock(
       transaction,
       `canonicalization:${input.tenantId}:${input.entityId}`,
@@ -77,7 +96,12 @@ export class CanonicalizationService {
       entity.canonicalVersion > 0
         ? requireCurrentHistory(entity.canonicalVersion, entity.canonicalVersions[0])
         : null;
-    if (!structural && input.ingestionOperation === 'UNCHANGED' && entity.canonicalVersion > 0)
+    if (
+      !structural &&
+      !reviewed &&
+      input.ingestionOperation === 'UNCHANGED' &&
+      entity.canonicalVersion > 0
+    )
       return;
 
     const linkedRecords = await transaction.entityRecordLink.findMany({
@@ -105,7 +129,7 @@ export class CanonicalizationService {
 
     const projection = buildCanonicalProjection(contractEntityType(entity.entityType), records);
     const persistedProjection = jsonProjection(projection);
-    if (!structural && currentHistory) {
+    if (!structural && !reviewed && currentHistory) {
       if (
         canonicalizeJson({
           canonicalData: entity.canonicalData,
@@ -156,8 +180,17 @@ export class CanonicalizationService {
         provenance: persistedProjection.provenance,
         triggerSourceRecordId: structural ? null : input.sourceRecordId,
         triggerOperation:
-          DatabaseCanonicalTriggerOperation[structural ? input.operation : triggerFor(input)],
+          DatabaseCanonicalTriggerOperation[
+            structural
+              ? input.operation
+              : reviewed
+                ? input.decision === 'APPROVE'
+                  ? 'REVIEW_APPROVED'
+                  : 'REVIEW_REJECTED'
+                : triggerFor(input)
+          ],
         entityOperationId: structural ? input.entityOperationId : null,
+        reviewDecisionId: reviewed ? input.reviewDecisionId : null,
         canonicalizationVersion: CANONICALIZATION_VERSION,
       },
     });

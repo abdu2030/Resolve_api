@@ -1,5 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { EntityType, ResolutionDecision, type EntityOperationResult } from '@resolve/contracts';
+import {
+  EntityType,
+  ResolutionDecision,
+  type EntityOperationResult,
+  type ReviewDecisionResult,
+} from '@resolve/contracts';
 import {
   DatabaseEntityType,
   DatabaseMatchDecision,
@@ -9,6 +14,7 @@ import {
 
 import { ApiException } from '../common/http/api-exception.js';
 import { PRISMA_CLIENT } from '../infrastructure/infrastructure.tokens.js';
+import { mapReviewDecision } from '../reviews/review.mapper.js';
 import {
   decodeHistoryCursor,
   decodeRecordCursor,
@@ -162,6 +168,7 @@ export class EntityQueryService {
         algorithmVersion: true,
         explanation: true,
         lastEntityOperationId: true,
+        reviewDecisionId: true,
         createdAt: true,
         sourceRecord: {
           select: {
@@ -217,6 +224,7 @@ export class EntityQueryService {
         triggerSourceRecordId: true,
         triggerOperation: true,
         entityOperationId: true,
+        reviewDecisionId: true,
         canonicalizationVersion: true,
         createdAt: true,
       },
@@ -233,12 +241,23 @@ export class EntityQueryService {
           })
         : [];
     const operationsById = new Map(operations.map((row) => [row.id, mapEntityOperation(row)]));
+    const reviewIds = [
+      ...new Set(pageRows.flatMap((row) => (row.reviewDecisionId ? [row.reviewDecisionId] : []))),
+    ];
+    const decisions =
+      reviewIds.length > 0
+        ? await this.prisma.reviewDecision.findMany({ where: { tenantId, id: { in: reviewIds } } })
+        : [];
+    const decisionsById = new Map(decisions.map((row) => [row.id, mapReviewDecision(row)]));
     return {
       items: pageRows.map((row) => {
         const operation =
           row.entityOperationId === null ? null : operationsById.get(row.entityOperationId);
         if (operation === undefined) throw new EntityDataIntegrityError();
-        return mapHistory(row, operation);
+        const decision =
+          row.reviewDecisionId === null ? null : decisionsById.get(row.reviewDecisionId);
+        if (decision === undefined) throw new EntityDataIntegrityError();
+        return mapHistory(row, operation, decision);
       }),
       next_cursor:
         hasMore && pageRows.length > 0
@@ -263,6 +282,7 @@ function mapLinkedRecord(row: {
   explanation: Prisma.JsonValue;
   createdAt: Date;
   lastEntityOperationId: string | null;
+  reviewDecisionId: string | null;
   sourceRecord: {
     id: string;
     entityType: DatabaseEntityType;
@@ -299,6 +319,7 @@ function mapLinkedRecord(row: {
       explanation: requirePlainObject(row.explanation),
       linked_at: row.createdAt.toISOString(),
       entity_operation_id: row.lastEntityOperationId,
+      review_decision_id: row.reviewDecisionId,
     },
   };
 }
@@ -310,12 +331,21 @@ function mapHistory(
     provenance: Prisma.JsonValue;
     triggerSourceRecordId: string | null;
     triggerOperation:
-      'ENTITY_CREATED' | 'RECORD_LINKED' | 'RECORD_UPDATED' | 'LEGACY_BACKFILL' | 'MERGE' | 'SPLIT';
+      | 'ENTITY_CREATED'
+      | 'RECORD_LINKED'
+      | 'RECORD_UPDATED'
+      | 'LEGACY_BACKFILL'
+      | 'MERGE'
+      | 'SPLIT'
+      | 'REVIEW_APPROVED'
+      | 'REVIEW_REJECTED';
     entityOperationId: string | null;
+    reviewDecisionId: string | null;
     canonicalizationVersion: string;
     createdAt: Date;
   },
   operation: EntityOperationResult | null,
+  decision: ReviewDecisionResult | null,
 ): EntityHistoryResponseDto {
   return {
     version: row.version,
@@ -325,8 +355,10 @@ function mapHistory(
       operation: row.triggerOperation,
       source_record_id: row.triggerSourceRecordId,
       entity_operation_id: row.entityOperationId,
+      review_decision_id: row.reviewDecisionId,
     },
     entity_operation: operation,
+    review_decision: decision,
     canonicalization_version: row.canonicalizationVersion,
     created_at: row.createdAt.toISOString(),
   };
