@@ -19,6 +19,8 @@ const expectedTables = [
 const expectedEnums = [
   'canonical_selection_rule',
   'canonical_trigger_operation',
+  'entity_operation_type',
+  'entity_status',
   'entity_type',
   'match_decision',
   'review_case_status',
@@ -119,7 +121,7 @@ describe('foundational schema migration', () => {
     }
   });
 
-  it('creates the six foundational tables and three domain enums', async () => {
+  it('creates the six foundational tables and all current domain enums', async () => {
     const tables = await database!.query<{ table_name: string }>(
       `SELECT table_name
        FROM information_schema.tables

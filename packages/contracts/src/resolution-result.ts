@@ -23,6 +23,7 @@ export interface ResolutionResult {
   created_at: string;
   decision: ResolutionDecision;
   entity_id: string;
+  entity_operation_id?: string;
   explanation: ResolutionExplanation;
   matched_against?: string;
   record_id: string;
