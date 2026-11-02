@@ -71,6 +71,7 @@ function candidateQuery(input: QueryInput, signalPredicate: Prisma.Sql): Prisma.
     WHERE supporting.tenant_id = CAST(${input.tenantId} AS UUID)
       AND supporting.entity_type = CAST(${input.entityType} AS ${entityType})
       AND entity.entity_type = supporting.entity_type
+      AND entity.status = 'ACTIVE'
       AND supporting.id <> CAST(${input.sourceRecordId} AS UUID)
       AND ${signalPredicate}
     ORDER BY link.entity_id ASC, supporting.id ASC

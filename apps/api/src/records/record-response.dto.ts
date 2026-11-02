@@ -35,6 +35,7 @@ export class RecordResponseDto implements RecordIngestionResult {
   @ApiProperty({ enum: ResolutionDecision }) decision!: ResolutionDecision;
   @ApiProperty({ minimum: 0, maximum: 1 }) confidence!: number;
   @ApiPropertyOptional({ format: 'uuid' }) matched_against?: string;
+  @ApiPropertyOptional({ format: 'uuid' }) entity_operation_id?: string;
   @ApiProperty({ type: ResolutionExplanationDto })
   explanation!: ResolutionExplanation;
   @ApiProperty() algorithm_version!: string;

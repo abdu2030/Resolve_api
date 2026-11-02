@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { EntityType, ResolutionDecision } from '@resolve/contracts';
+import { EntityType, ResolutionDecision, type EntityOperationResult } from '@resolve/contracts';
 import {
   DatabaseEntityType,
   DatabaseMatchDecision,
@@ -16,6 +16,7 @@ import {
   encodeRecordCursor,
 } from './entity-cursor.js';
 import { EntityDataIntegrityError } from './entity-data-integrity.error.js';
+import { mapEntityOperation } from './entity-operation.mapper.js';
 import type { EntityPageQueryDto } from './entity-pagination.dto.js';
 import type {
   EntityHistoryPageDto,
@@ -40,6 +41,8 @@ export class EntityQueryService {
           select: {
             id: true,
             entityType: true,
+            status: true,
+            mergedIntoEntityId: true,
             canonicalData: true,
             canonicalVersion: true,
             createdAt: true,
@@ -80,6 +83,8 @@ export class EntityQueryService {
       return {
         entity_id: entity.id,
         entity_type: contractEntityType(entity.entityType),
+        status: entity.status,
+        merged_into_entity_id: entity.mergedIntoEntityId,
         canonical_data: canonicalData,
         canonical_version: 0,
         canonicalization_version: null,
@@ -115,6 +120,8 @@ export class EntityQueryService {
     return {
       entity_id: entity.id,
       entity_type: contractEntityType(entity.entityType),
+      status: entity.status,
+      merged_into_entity_id: entity.mergedIntoEntityId,
       canonical_data: canonicalData,
       canonical_version: entity.canonicalVersion,
       canonicalization_version: latest.canonicalizationVersion,
@@ -154,6 +161,7 @@ export class EntityQueryService {
         decision: true,
         algorithmVersion: true,
         explanation: true,
+        lastEntityOperationId: true,
         createdAt: true,
         sourceRecord: {
           select: {
@@ -208,14 +216,30 @@ export class EntityQueryService {
         provenance: true,
         triggerSourceRecordId: true,
         triggerOperation: true,
+        entityOperationId: true,
         canonicalizationVersion: true,
         createdAt: true,
       },
     });
     const hasMore = rows.length > limit;
     const pageRows = rows.slice(0, limit);
+    const operationIds = [
+      ...new Set(pageRows.flatMap((row) => (row.entityOperationId ? [row.entityOperationId] : []))),
+    ];
+    const operations =
+      operationIds.length > 0
+        ? await this.prisma.entityOperation.findMany({
+            where: { tenantId, id: { in: operationIds } },
+          })
+        : [];
+    const operationsById = new Map(operations.map((row) => [row.id, mapEntityOperation(row)]));
     return {
-      items: pageRows.map(mapHistory),
+      items: pageRows.map((row) => {
+        const operation =
+          row.entityOperationId === null ? null : operationsById.get(row.entityOperationId);
+        if (operation === undefined) throw new EntityDataIntegrityError();
+        return mapHistory(row, operation);
+      }),
       next_cursor:
         hasMore && pageRows.length > 0
           ? encodeHistoryCursor(pageRows[pageRows.length - 1]!.version)
@@ -238,6 +262,7 @@ function mapLinkedRecord(row: {
   algorithmVersion: string;
   explanation: Prisma.JsonValue;
   createdAt: Date;
+  lastEntityOperationId: string | null;
   sourceRecord: {
     id: string;
     entityType: DatabaseEntityType;
@@ -273,19 +298,25 @@ function mapLinkedRecord(row: {
       algorithm_version: row.algorithmVersion,
       explanation: requirePlainObject(row.explanation),
       linked_at: row.createdAt.toISOString(),
+      entity_operation_id: row.lastEntityOperationId,
     },
   };
 }
 
-function mapHistory(row: {
-  version: number;
-  canonicalData: Prisma.JsonValue;
-  provenance: Prisma.JsonValue;
-  triggerSourceRecordId: string | null;
-  triggerOperation: 'ENTITY_CREATED' | 'RECORD_LINKED' | 'RECORD_UPDATED' | 'LEGACY_BACKFILL';
-  canonicalizationVersion: string;
-  createdAt: Date;
-}): EntityHistoryResponseDto {
+function mapHistory(
+  row: {
+    version: number;
+    canonicalData: Prisma.JsonValue;
+    provenance: Prisma.JsonValue;
+    triggerSourceRecordId: string | null;
+    triggerOperation:
+      'ENTITY_CREATED' | 'RECORD_LINKED' | 'RECORD_UPDATED' | 'LEGACY_BACKFILL' | 'MERGE' | 'SPLIT';
+    entityOperationId: string | null;
+    canonicalizationVersion: string;
+    createdAt: Date;
+  },
+  operation: EntityOperationResult | null,
+): EntityHistoryResponseDto {
   return {
     version: row.version,
     canonical_data: requirePlainObject(row.canonicalData),
@@ -293,7 +324,9 @@ function mapHistory(row: {
     trigger: {
       operation: row.triggerOperation,
       source_record_id: row.triggerSourceRecordId,
+      entity_operation_id: row.entityOperationId,
     },
+    entity_operation: operation,
     canonicalization_version: row.canonicalizationVersion,
     created_at: row.createdAt.toISOString(),
   };

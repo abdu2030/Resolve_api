@@ -10,6 +10,7 @@ import { DatabaseEntityType, Prisma, type ResolvePrismaClient } from '@resolve/d
 import { NORMALIZATION_VERSION, normalizeRecord } from '@resolve/normalization';
 
 import { acquireTransactionLock } from '../common/database/advisory-lock.js';
+import { acquireEntityMembershipLock } from '../common/database/entity-membership-lock.js';
 import { ApiException } from '../common/http/api-exception.js';
 import { hashCanonicalJson } from '../common/json/canonical-json.js';
 import { CanonicalizationService } from '../canonicalization/canonicalization.service.js';
@@ -70,6 +71,7 @@ export class RecordIngestionService {
         }
       }
 
+      await acquireEntityMembershipLock(transaction, tenantId, 'shared');
       const source = await transaction.sourceSystem.findUnique({
         where: { tenantId_name: { tenantId, name: input.source } },
       });

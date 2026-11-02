@@ -10,6 +10,7 @@ import { extractFeatures, scoreFeatures, type ComparisonRecord } from '@resolve/
 
 import { CandidateGenerationService } from '../blocking/candidate-generation.service.js';
 import type { BlockingCandidate } from '../blocking/blocking.types.js';
+import { acquireEntityMembershipLock } from '../common/database/entity-membership-lock.js';
 import { selectResolutionOutcome } from './candidate-selection.js';
 import { ResolutionDataIntegrityError } from './resolution-data-integrity.error.js';
 import type { CandidateScore, ResolutionExecution } from './resolution.types.js';
@@ -27,6 +28,7 @@ export class ResolutionService {
     tenantId: string,
     sourceRecordId: string,
   ): Promise<ResolutionExecution> {
+    await acquireEntityMembershipLock(transaction, tenantId, 'shared');
     const storedLink = await transaction.entityRecordLink.findUnique({
       where: { tenantId_sourceRecordId: { tenantId, sourceRecordId } },
       select: {
@@ -35,6 +37,7 @@ export class ResolutionService {
         decision: true,
         algorithmVersion: true,
         explanation: true,
+        lastEntityOperationId: true,
       },
     });
     if (storedLink) {
@@ -45,6 +48,9 @@ export class ResolutionService {
         confidence: Number(storedLink.score),
         explanation: storedExplanation(storedLink.explanation),
         algorithm_version: storedLink.algorithmVersion,
+        ...(storedLink.lastEntityOperationId
+          ? { entity_operation_id: storedLink.lastEntityOperationId }
+          : {}),
         ...(decision === ResolutionDecision.AutoMatch
           ? { matched_against: storedLink.entityId }
           : {}),
