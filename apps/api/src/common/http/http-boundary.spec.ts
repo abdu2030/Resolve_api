@@ -1,7 +1,7 @@
 import type { Server } from 'node:http';
 import 'reflect-metadata';
 
-import { Body, Controller, Get, Module, Post, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Module, Post, Req } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
@@ -11,6 +11,10 @@ import type { RawBodyRequest } from './raw-body-request.js';
 
 @Controller()
 class BoundaryController {
+  @Get('invalid')
+  invalid(): never {
+    throw new BadRequestException(['Unknown actor field']);
+  }
   @Post('probe')
   probe(@Req() request_: RawBodyRequest, @Body() body: unknown): object {
     return { body, raw: request_.rawBody?.toString('utf8') };
@@ -30,6 +34,25 @@ class BoundaryController {
 class BoundaryModule {}
 
 describe('HTTP boundary', () => {
+  it('maps Nest validation exceptions into the safe error envelope', async () => {
+    const fixture = await Test.createTestingModule({ imports: [BoundaryModule] }).compile();
+    const app = fixture.createNestApplication({ bodyParser: false });
+    configureApplication(app, '1mb');
+    await app.init();
+    try {
+      const response = await request(app.getHttpServer() as Server).get('/v1/invalid');
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: {
+          code: 'BAD_REQUEST',
+          message: 'Request validation failed',
+          details: { messages: ['Unknown actor field'] },
+        },
+      });
+    } finally {
+      await app.close();
+    }
+  });
   it('keeps the original JSON bytes available after parsing', async () => {
     const fixture = await Test.createTestingModule({ imports: [BoundaryModule] }).compile();
     const app = fixture.createNestApplication({ bodyParser: false });

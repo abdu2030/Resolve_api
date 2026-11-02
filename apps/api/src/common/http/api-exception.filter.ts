@@ -55,5 +55,14 @@ export class ApiExceptionFilter implements ExceptionFilter {
 }
 
 function isApiErrorBody(value: unknown): value is ApiErrorBody {
-  return typeof value === 'object' && value !== null && 'error' in value;
+  if (typeof value !== 'object' || value === null || !('error' in value)) return false;
+  const error = value.error;
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    'message' in error &&
+    typeof error.message === 'string'
+  );
 }
