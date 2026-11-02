@@ -4,7 +4,12 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
-Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint. Week 2 Days 1-4 add deterministic comparison, `features-v1` extraction, versioned `rules-0.1.0` scoring, the live resolver pipeline, `canonicalization-v1` survivorship, field provenance, immutable canonical history, and tenant-scoped entity reads.
+Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint. Week 2 Days 1-5 add deterministic comparison, `features-v1` extraction, versioned `rules-0.1.0` scoring, the live resolver pipeline, `canonicalization-v1` survivorship, field provenance, immutable canonical history, tenant-scoped entity reads, and safe manual merge, selected-record split, and explicit merge reversal.
+
+Follow the
+[step-by-step PowerShell merge/split testing guide](docs/testing/week2-day5-merge-split-powershell.md)
+from your checkout for setup, migrations, action scopes, merge, replay, source
+updates, exact reversal, selected split, denial checks, and SQL preservation checks.
 
 The API stores each source record under a stable tenant/source/external identity. Changed payloads create immutable history rows; identical retries create no new raw version. Each accepted record stores separate `normalization-v1` payload and indexed projections while preserving the submitted source data. In the same transaction, `blocking-v1` retrieves only tenant-local, same-type linked entity candidates, the matching package compares and scores every supporting record, and the resolver returns an explainable three-way decision. `AUTO_MATCH` links the record to one existing entity, `NO_MATCH` creates and links a new entity, and `REVIEW` creates an open review case without linking the incoming record.
 
@@ -95,7 +100,7 @@ Apply the migrations, then run the bootstrap command:
 npm run auth:bootstrap -- --tenant-name "Local Demo" --environment test
 ```
 
-The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears; PostgreSQL stores only its SHA-256 hash. The default key has `sources:write`, `records:write`, and `entities:read` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name. Each bootstrap invocation creates a new tenant and key; it does not add a key to a previously created tenant.
+The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears; PostgreSQL stores only its SHA-256 hash. The default key has `sources:write`, `records:write`, `entities:read`, `entities:merge`, and `entities:split` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name. Existing keys are not upgraded automatically. Each bootstrap invocation creates a new tenant and key; it does not add a key to a previously created tenant.
 
 ## Manual canonicalization validation in PowerShell
 

@@ -7,7 +7,9 @@ Resolve supports `person` and `company` records. External JSON uses snake_case.
 Protected requests use `Authorization: Bearer <api-key>`. Tenant identity comes
 only from the authenticated key. `POST /v1/sources` requires `sources:write`,
 `POST /v1/records` requires `records:write`, and all entity reads require
-`entities:read`. Bootstrap keys include all three scopes by default.
+`entities:read`. Merge requires `entities:merge`; both split modes require
+`entities:split`. Bootstrap keys include all five scopes by default. Existing
+keys keep their stored scopes.
 
 `POST /v1/sources` accepts:
 
@@ -149,6 +151,8 @@ Missing and foreign-tenant entities return the same `404` response.
 {
   "entity_id": "fd38f3f4-cad4-4506-b545-3d6d570c4fe9",
   "entity_type": "person",
+  "status": "ACTIVE",
+  "merged_into_entity_id": null,
   "canonical_data": {
     "name": "Abdulkerim Hassen",
     "email": "abdul@example.com"
@@ -213,6 +217,7 @@ modifying them. `next_cursor: null` marks the final page.
         "confidence": 0.963,
         "algorithm_version": "rules-0.1.0",
         "explanation": {},
+        "entity_operation_id": null,
         "linked_at": "2026-09-09T10:00:00.000Z"
       }
     }
@@ -241,8 +246,10 @@ ordered by version descending. Record and history cursors are not interchangeabl
       "provenance": {},
       "trigger": {
         "operation": "RECORD_UPDATED",
-        "source_record_id": "d4aa13ad-30d1-4af6-89f2-e5eefbb1bd44"
+        "source_record_id": "d4aa13ad-30d1-4af6-89f2-e5eefbb1bd44",
+        "entity_operation_id": null
       },
+      "entity_operation": null,
       "canonicalization_version": "canonicalization-v1",
       "created_at": "2026-09-09T10:00:00.000Z"
     }
@@ -252,10 +259,150 @@ ordered by version descending. Record and history cursors are not interchangeabl
 ```
 
 Canonical objects and provenance are abbreviated above. Trigger operations
-are `ENTITY_CREATED`, `RECORD_LINKED`, `RECORD_UPDATED`, and `LEGACY_BACKFILL`.
+are `ENTITY_CREATED`, `RECORD_LINKED`, `RECORD_UPDATED`, `LEGACY_BACKFILL`,
+`MERGE`, and `SPLIT`.
 `trigger.source_record_id` may be null. Snapshots are append-only with unique,
 sequential entity versions; no update or delete route is exposed. Version-0
 entities have an empty history page.
+
+## Manual entity operations (`entity-operations-v1`)
+
+Both POST routes require `Authorization: Bearer <api-key>` and an
+`Idempotency-Key` of 1..255 visible ASCII characters without whitespace.
+IDs must be UUID v4; comparisons and request hashing lowercase UUIDs. Versions
+are integers `0..2147483647`; an entity at the maximum cannot be incremented.
+Reasons are trimmed strings of 1..500 characters. Unknown fields are rejected.
+Actor and tenant come exclusively from the authenticated principal.
+
+### `POST /v1/entities/:entityId/merge`
+
+Requires `entities:merge`. The path ID is the surviving **target**:
+
+```json
+{
+  "source_entity_id": "fd38f3f4-cad4-4506-b545-3d6d570c4fe9",
+  "expected_source_version": 1,
+  "expected_target_version": 2,
+  "reason": "Confirmed duplicate identity"
+}
+```
+
+Returns `200`. Source and target must be different, ACTIVE, same-type,
+tenant-owned entities with nonempty membership and current expected versions.
+All source links move to the target. The source ID remains readable as a
+`MERGED` shell with `merged_into_entity_id` set to the target, zero records,
+empty current canonical data/provenance, and intact history. Reads never
+redirect automatically. Blocking excludes merged entities.
+
+### `POST /v1/entities/:entityId/split`
+
+Requires `entities:split`. The path ID is the ACTIVE entity losing records.
+Exactly one selector is required; supplying both, neither, or null fails validation.
+
+Selected-record mode creates a new ACTIVE entity of the same type and returns
+`201`. The selection must be a nonempty proper subset of current membership:
+
+```json
+{
+  "record_ids": ["d4aa13ad-30d1-4af6-89f2-e5eefbb1bd44"],
+  "expected_version": 3,
+  "reason": "These records represent another person"
+}
+```
+
+Duplicate IDs, including case-only duplicates, are invalid. Unknown,
+foreign-tenant, and other-entity records all return the same
+`404 SOURCE_RECORD_NOT_FOUND`. The source must retain at least one record.
+
+Explicit merge reversal returns `200` and restores the original source ID:
+
+```json
+{
+  "merge_event_id": "7198e9fe-a1ca-4c6c-b2d6-bd16b93ebeb3",
+  "expected_version": 3,
+  "reason": "Reversing a mistaken merge"
+}
+```
+
+The event must be a same-tenant MERGE targeting the path entity. Its source
+must still be MERGED directly into that target, the event must not already
+be reversed, and all recorded members must remain in the target. The target
+must retain another record. Reversal moves exactly those members back,
+reactivates the original source, and recomputes from **latest** source values.
+Unrelated target ingestions can remain; later source-value updates are safe.
+A moved-away member, changed merge chain, or previous reversal prevents a
+partial undo. Reverse chains in reverse order. Original merge history remains.
+
+### Operation response and audit
+
+All three actions return this shape; `record_ids` is sorted. On UNMERGE,
+`source_entity_id` is the current target losing members, `target_entity_id`
+is the original source being restored, and `reversed_operation_id` references
+the original MERGE. On selected SPLIT, the target is the newly created ID.
+
+```json
+{
+  "operation_id": "7198e9fe-a1ca-4c6c-b2d6-bd16b93ebeb3",
+  "operation": "MERGE",
+  "operation_version": "entity-operations-v1",
+  "source_entity_id": "fd38f3f4-cad4-4506-b545-3d6d570c4fe9",
+  "target_entity_id": "3bf2dfd5-f2dc-46c0-adc2-ed9b8892c590",
+  "record_ids": ["d4aa13ad-30d1-4af6-89f2-e5eefbb1bd44"],
+  "reason": "Confirmed duplicate identity",
+  "actor_api_key_id": "09818a9a-c7b7-4809-9f10-d8c472d2db09",
+  "source_version_before": 1,
+  "source_version_after": 2,
+  "target_version_before": 2,
+  "target_version_after": 3,
+  "reversed_operation_id": null,
+  "created_at": "2026-10-28T10:00:00.000Z"
+}
+```
+
+Each successful action appends one immutable operation event and exactly one
+canonical snapshot for **each** affected entity, even if field winners do not
+change. MERGE uses MERGE snapshot triggers; SPLIT and UNMERGE use SPLIT.
+History exposes the complete object as `item.entity_operation` and its ID as
+`item.trigger.entity_operation_id`; ingestion-only snapshots have null values.
+Raw records/versions, prior canonical snapshots, link IDs/creation times,
+confidence/decision/algorithm/explanation, match features, and review cases
+are preserved. `link.entity_operation_id` identifies the latest manual move;
+it does not replace the original matching evidence. Unkeyed re-ingestion
+returns current membership and optional `entity_operation_id` with the
+historical link decision/confidence.
+
+An identical successful keyed request returns the original status/body and
+`Idempotency-Replayed: true` with no new events, entities, or snapshots. This
+is a historical response even after a subsequent reversal or split. A stored
+ingestion replay can similarly reference a now-merged readable ID. Use fresh
+GETs for current state. Hashes include route/entity, action, and validated
+payload; record sets are sorted. Reusing a tenant key for another payload or
+operation returns `409 IDEMPOTENCY_KEY_REUSED`. Failed operations store no
+ledger row, so a corrected retry can reuse that failed key.
+
+Merge combined membership, or split/reversal current source membership, is
+limited to `ENTITY_OPERATION_MAX_RECORDS = 1000`. Reads fetch at most 1001
+members and reject overflow with `422 ENTITY_OPERATION_LIMIT`. Request arrays
+over 1000 fail validation with `400` instead. Events, links, statuses, canonical
+state, two snapshots, and replay ledger commit or roll back together.
+
+Pending review cases retain their historical candidate IDs and evidence.
+Week 2 Day 6 must validate stale or merged candidates before applying review
+decisions; Day 5 adds no review-decision endpoint or automatic rewrite.
+
+Operation errors use the envelope below. Missing keys return
+`400 IDEMPOTENCY_KEY_REQUIRED`; malformed supplied keys return
+`400 INVALID_IDEMPOTENCY_KEY`. Missing/foreign entities and events return
+indistinguishable `404 ENTITY_NOT_FOUND` or `MERGE_EVENT_NOT_FOUND`.
+State/version/type failures use `409 ENTITY_NOT_ACTIVE`,
+`ENTITY_VERSION_CONFLICT`, or `ENTITY_TYPE_CONFLICT`. Unsafe selections and
+self/empty merges use `INVALID_ENTITY_SPLIT` or `INVALID_ENTITY_MERGE`;
+reversal conflicts use `MERGE_ALREADY_REVERSED` or
+`MERGE_REVERSAL_CONFLICT`. A detected concurrent membership mismatch uses
+`ENTITY_MEMBERSHIP_CONFLICT`. Authentication/scope failures remain `401`/`403`.
+
+See the [PowerShell testing guide](../testing/week2-day5-merge-split-powershell.md)
+for executable requests, expected statuses, replay and database checks.
 
 ## Errors
 
@@ -277,4 +424,5 @@ Errors use the existing envelope:
 | `403`  | Authenticated key lacks the required scope.                                                                                                                                     |
 | `404`  | Entity is absent or belongs to another tenant (`ENTITY_NOT_FOUND`).                                                                                                             |
 | `409`  | Source replay conflicts (`SOURCE_TYPE_CONFLICT` or `SOURCE_PRIORITY_CONFLICT`), incompatible record identity, or conflicting idempotency-key reuse.                             |
+| `422`  | Entity operation membership exceeds 1000 records (`ENTITY_OPERATION_LIMIT`).                                                                                                    |
 | `500`  | Unexpected failure, with a sanitized `INTERNAL_ERROR` and no stack trace or customer payload.                                                                                   |

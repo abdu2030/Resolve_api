@@ -337,5 +337,66 @@ All queries use authenticated tenant context; missing and cross-tenant IDs
 return the same `404`. Reads perform no backfill or write. Version-zero reads
 return the stored canonical object, empty provenance/history, and a null policy
 version. Raw payloads are exposed only for authenticated audit use and must not
-be logged. Merge/split, manual locks, source-priority updates, and background
+be logged. Manual field locks, source-priority updates, and background
 recomputation remain outside this milestone.
+
+## Week 2 Day 5 entity membership operations
+
+The entities module now separates its read service from a thin mutation
+controller and `EntityManagementService`. Contracts own validated request
+types, `entity-operation-policy.ts` owns pure membership/state planning, and
+`entity-operation.mapper.ts` maps database events to public snake_case audit
+objects. The operation policy is `entity-operations-v1`; canonical extraction,
+ranking, formatting, and provenance remain `canonicalization-v1`.
+
+Merge retains the absorbed entity as a MERGED shell and moves existing links
+to the ACTIVE target. A selected split creates a new ACTIVE ID; explicit
+merge reversal restores the original source ID from recorded membership,
+using latest source values. No raw record/version, matcher evidence, review
+case, original link ID, or prior canonical snapshot is deleted or rewritten.
+Blocking includes only ACTIVE candidates. Old IDs retain their own history
+and reads do not redirect through merge chains.
+
+`entity_operations` is append-only audit history with reason, authenticated
+API-key actor, bounded/sorted member IDs, before/after versions, and an optional
+reversed-operation reference. Composite tenant foreign keys protect actor,
+source, target, reversal, link last-operation references, and canonical
+snapshot operation references. Database checks enforce lifecycle, event
+shape, and version/count constraints; uniqueness permits one reversal per
+merge. No external queue or cache participates in transaction correctness.
+
+Concurrency uses PostgreSQL transaction advisory locks in this order:
+
+1. Tenant/idempotency key, when supplied for ingestion and required for mutations.
+2. Tenant membership gate, exactly `entity-membership:${tenantId}`.
+3. Existing source-record locks for ingestion.
+4. Canonicalization entity locks, sorted by ID for multi-entity mutations,
+   using `canonicalization:${tenantId}:${entityId}`.
+
+Ingestion takes a shared membership gate before source-record writes;
+independently invoked resolution takes the same shared gate on entry.
+Merge/split take its exclusive mode before membership reads or writes.
+Concurrent ingestions can proceed; a manual action serializes membership
+changes within its tenant. Other tenants have independent gates. State,
+versions, and membership are validated under those locks. Events and newly
+created entities precede referencing writes; links/statuses, both canonical
+projections/snapshots, and the idempotency ledger commit atomically.
+
+Membership reads stop at 1001 rows. Operations reject combined merge
+membership or current split/reversal membership above 1000 with 422, bounding
+audit payloads and synchronous recomputation. Each success appends exactly
+two structural canonical snapshots (MERGE, or SPLIT for split/reversal),
+including unchanged winners. Existing ingestion no-op behavior stays intact.
+Failures roll back every operation effect, including its replay ledger.
+
+Reversal requires the exact original source to remain MERGED directly into
+the target, all recorded members still there, and a nonempty remaining target.
+It appends UNMERGE and preserves MERGE; it never restores an old source
+snapshot. Reverse merge chains in reverse order. Successful keyed replay
+returns historical status/body without repeating writes, even after later
+membership changes. Fresh reads show current state. Historical review
+candidates/evidence stay intact; Week 2 Day 6 must check stale/merged candidate
+state before applying a review decision.
+
+See the [operation contract](../contracts/mvp-v1.md#manual-entity-operations-entity-operations-v1)
+and [manual PowerShell guide](../testing/week2-day5-merge-split-powershell.md).
