@@ -4,6 +4,16 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
+Week 2 Day 6 adds review listing/evidence inspection and transactional
+approve/reject decisions with immutable human outcomes. Approval links the
+record to the proposed entity; rejection creates a separate entity. Both
+preserve machine evidence and record actor/reason and canonical history.
+See the [Day 6 PowerShell testing guide](docs/testing/week2-day6-reviews-powershell.md)
+for setup commands, review requests, and detailed expected results.
+Review reads require `reviews:read`; decisions require `reviews:write` and
+Idempotency-Key. Existing API keys need the new scopes; bootstrap defaults now
+include all seven supported scopes. Matching weights/thresholds remain unchanged.
+
 Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint. Week 2 Days 1-5 add deterministic comparison, `features-v1` extraction, versioned `rules-0.1.0` scoring, the live resolver pipeline, `canonicalization-v1` survivorship, field provenance, immutable canonical history, tenant-scoped entity reads, and safe manual merge, selected-record split, and explicit merge reversal.
 
 Follow the
@@ -100,7 +110,7 @@ Apply the migrations, then run the bootstrap command:
 npm run auth:bootstrap -- --tenant-name "Local Demo" --environment test
 ```
 
-The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears; PostgreSQL stores only its SHA-256 hash. The default key has `sources:write`, `records:write`, `entities:read`, `entities:merge`, and `entities:split` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name. Existing keys are not upgraded automatically. Each bootstrap invocation creates a new tenant and key; it does not add a key to a previously created tenant.
+The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears; PostgreSQL stores only its SHA-256 hash. The default key has `sources:write`, `records:write`, `entities:read`, `entities:merge`, `entities:split`, `reviews:read`, and `reviews:write` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name. Existing keys are not upgraded automatically. Each bootstrap invocation creates a new tenant and key; it does not add a key to a previously created tenant.
 
 ## Manual canonicalization validation in PowerShell
 

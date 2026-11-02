@@ -2,13 +2,92 @@
 
 Resolve supports `person` and `company` records. External JSON uses snake_case.
 
+## Human review (`review-v1`, Week 2 Day 6)
+
+| Endpoint                              | Scope           | Behavior                                                                                                                  |
+| ------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| GET `/v1/reviews`                     | `reviews:read`  | Bounded newest-first page; status OPEN (default) or RESOLVED; limit1..100 (default25); opaque cursor                      |
+| GET `/v1/reviews/:reviewId`           | `reviews:read`  | Original scoring evidence, current records/candidate, captured raw evidence, approval eligibility, optional human outcome |
+| POST `/v1/reviews/:reviewId/decision` | `reviews:write` | Atomic APPROVE/REJECT; requires Idempotency-Key; returns200                                                               |
+
+Decision body (no unknown/actor/tenant fields accepted):
+
+```json
+{
+  "decision": "APPROVE",
+  "reason": "Confirmed by reviewer",
+  "expected_source_version": 1,
+  "expected_candidate_version": 1
+}
+```
+
+`decision` is APPROVE or REJECT. Reason trims to1..500 Unicode characters.
+Source version is an integer1..2147483647; expected candidate version is its
+current canonical version, integer0..2147483647. Both come from a fresh detail
+read; approval requires both still current. Rejection checks the source version
+and may proceed when candidate evidence is stale (candidate version is still
+required input, but does not gate rejection).
+
+APPROVE adds the unlinked source to the original same-type ACTIVE candidate.
+It refuses changed evidence record versions, moved supporting records, merged
+candidates, linked sources, and canonical version exhaustion. It does not follow
+merged redirects or silently choose another candidate. Newly created cases capture
+both scored record versions. Existing cases retain null versions; only untouched
+version1 source/supporting records may be approved. Unknown historical raw snapshots
+are null. REJECT creates a new same-type entity from current source data, leaving
+the candidate intact. A stale case can therefore be safely resolved as a distinct
+identity without accepting outdated matching evidence.
+
+Successful responses contain `review_decision_id`, `review_id`, `decision`,
+`reason`, `actor_api_key_id`, `entity_id`, observed `source_record_version`,
+`candidate_record_version`, `candidate_canonical_version`, resulting
+`canonical_version`, `policy_version: "review-v1"`, and `created_at`.
+Actor identity derives solely from the authenticated API-key principal.
+The case becomes RESOLVED; exactly one immutable human outcome is stored for
+quality analysis. The original machine score/features/explanation/algorithm
+are retained. Current field provenance and one REVIEW_APPROVED/REVIEW_REJECTED
+canonical snapshot are written in the same transaction.
+
+Idempotency keys use the existing tenant-wide1..255 visible ASCII validation.
+Same key/semantic request returns the original200/body and
+`Idempotency-Replayed: true`; another operation/body with that key returns409.
+Reason trimming and UUID case normalize before hashing. A new key for an already
+resolved case returns409 REVIEW_ALREADY_RESOLVED. Failed operations leave no
+outcome, link, new entity, snapshot, or idempotency row.
+
+New links retain REVIEW as original machine evidence and add nullable
+`review_decision_id`. Entity history exposes that nullable trigger reference and
+the full nullable `review_decision` audit object. Fresh ingestion of the linked
+record returns linked AUTO_MATCH (approved) or NO_MATCH (rejected) semantics,
+the original score/algorithm/explanation, and optional `review_decision_id`.
+This is explicit human assignment, not a new automatic score. Old keyed ingestion
+responses stay historical. Later merge/split still preserves these audit references.
+
+Errors retain the normal envelope:400 BAD_REQUEST for DTO validation,
+INVALID_IDEMPOTENCY_KEY/IDEMPOTENCY_KEY_REQUIRED/INVALID_CURSOR;401 for missing,
+invalid, or revoked keys;403 for missing scopes; indistinguishable404
+REVIEW_NOT_FOUND for absent/foreign cases. Conflicts include
+REVIEW_ALREADY_RESOLVED, REVIEW_RECORD_ALREADY_LINKED,
+REVIEW_SOURCE_VERSION_CONFLICT, REVIEW_EVIDENCE_STALE, ENTITY_VERSION_CONFLICT,
+and IDEMPOTENCY_KEY_REUSED. Internal failures are sanitized500.
+The shared HTTP filter now distinguishes domain error objects from Nest's
+string-valued `error`, preserving this envelope for validation failures.
+
+No score policy, thresholds, bulk decisions, alternative candidate selection,
+re-scoring endpoint, or quality dashboard is introduced here. Outcomes can be
+joined to cases/features for the Day7 evaluation. Evaluate original scorer
+evidence only with outcomes whose observed source/supporting versions equal the
+captured evidence versions. Legacy unknown versions and changed-version outcomes
+remain useful operational audits, but are not labels for that original scored pair.
+
 ## Source registration and authorization
 
 Protected requests use `Authorization: Bearer <api-key>`. Tenant identity comes
 only from the authenticated key. `POST /v1/sources` requires `sources:write`,
 `POST /v1/records` requires `records:write`, and all entity reads require
 `entities:read`. Merge requires `entities:merge`; both split modes require
-`entities:split`. Bootstrap keys include all five scopes by default. Existing
+`entities:split`. Review reads require `reviews:read`; decisions require
+`reviews:write`. Bootstrap keys include all seven scopes by default. Existing
 keys keep their stored scopes.
 
 `POST /v1/sources` accepts:
@@ -387,8 +466,8 @@ over 1000 fail validation with `400` instead. Events, links, statuses, canonical
 state, two snapshots, and replay ledger commit or roll back together.
 
 Pending review cases retain their historical candidate IDs and evidence.
-Week 2 Day 6 must validate stale or merged candidates before applying review
-decisions; Day 5 adds no review-decision endpoint or automatic rewrite.
+The review decision service validates stale evidence and merged/moved candidates
+before approval; membership operations never automatically rewrite review evidence.
 
 Operation errors use the envelope below. Missing keys return
 `400 IDEMPOTENCY_KEY_REQUIRED`; malformed supplied keys return

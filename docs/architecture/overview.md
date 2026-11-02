@@ -1,5 +1,44 @@
 # Resolve API Architecture
 
+## Review workflow boundary (Week 2 Day 6)
+
+`reviews/` contains thin scoped controllers, bounded keyset queries, pure stale
+evidence guards, public response mapping, and the decision transaction. GET detail
+uses RepeatableRead so source/candidate data, evidence snapshots, and outcome agree.
+It exposes original machine inputs separately from current data. No external calls
+or queues participate in a review decision.
+
+`review_cases` captures scored source/supporting record versions for new cases;
+the additive migration leaves historical unknown versions null. Immutable
+`review_decisions` records APPROVE/REJECT, actor/reason, original case, observed
+versions, resulting entity/canonical version, and policy `review-v1`. Composite
+tenant foreign keys protect case, actor, result, link, and canonical audit references;
+one outcome per tenant/case and an UPDATE/DELETE guard prevent rewriting outcomes.
+Raw source history, match features, and original case score/explanation are retained.
+
+Lock order is idempotency -> exclusive `entity-membership:${tenantId}` -> canonical
+entity lock. The existing ingestion shared gate and merge/split exclusive gate
+coordinate with this operation; no shared-to-exclusive lock upgrade is attempted.
+After locks, the service validates source version, unresolved/unlinked state, and
+(for approval) ACTIVE same-type candidate, unchanged evidence record versions,
+supporting membership, expected canonical version, and incrementability. Legacy
+null evidence versions are safe only when both records remain version1. Rejection
+uses current source data and does not depend on the candidate still being active.
+
+Outcome insertion, new entity when rejected, link creation, case closure, forced
+canonical snapshot/provenance recomputation, and response ledger commit atomically.
+The canonical selection policy remains `canonicalization-v1`; review triggers
+add audit context without changing ranking. Machine link evidence remains REVIEW;
+its human-decision marker tells the resolver how to report the current linked
+AUTO_MATCH/NO_MATCH result. Historical keyed responses remain unchanged.
+
+The main read paths expose human audit references additively. Existing raw,
+canonical, feature, and merge/split history survives later membership operations.
+Day7 quality evaluation can compare the original machine outcome with the stored
+human label without replacing either with the other. Scorer evaluation must filter
+to matching captured/observed record versions; changed-version and legacy unknown
+outcomes must not be treated as labels for the original scored pair.
+
 Resolve is an npm-workspaces modular monolith. The API and worker run as
 separate processes and share focused TypeScript packages.
 
@@ -395,8 +434,8 @@ It appends UNMERGE and preserves MERGE; it never restores an old source
 snapshot. Reverse merge chains in reverse order. Successful keyed replay
 returns historical status/body without repeating writes, even after later
 membership changes. Fresh reads show current state. Historical review
-candidates/evidence stay intact; Week 2 Day 6 must check stale/merged candidate
-state before applying a review decision.
+candidates/evidence stay intact; the review service checks stale evidence and
+merged/moved candidates before approval.
 
 See the [operation contract](../contracts/mvp-v1.md#manual-entity-operations-entity-operations-v1)
 and [manual PowerShell guide](../testing/week2-day5-merge-split-powershell.md).
