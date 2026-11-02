@@ -62,6 +62,8 @@ enum CanonicalTriggerOperation {
   LEGACY_BACKFILL
   MERGE
   SPLIT
+  REVIEW_APPROVED
+  REVIEW_REJECTED
 
   @@map("canonical_trigger_operation")
 }
@@ -71,6 +73,13 @@ enum ReviewCaseStatus {
   RESOLVED
 
   @@map("review_case_status")
+}
+
+enum ReviewOutcome {
+  APPROVE
+  REJECT
+
+  @@map("review_outcome")
 }
 
 model Tenant {
@@ -93,6 +102,7 @@ model Tenant {
   fieldProvenance      EntityFieldProvenance[]
   canonicalVersions    EntityCanonicalVersion[]
   entityOperations     EntityOperation[]
+  reviewDecisions      ReviewDecision[]
 
   @@map("tenants")
 }
@@ -109,6 +119,7 @@ model ApiKey {
   lastUsedAt       DateTime?         @map("last_used_at") @db.Timestamptz(3)
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "api_keys_tenant_fkey")
   entityOperations EntityOperation[]
+  reviewDecisions  ReviewDecision[]
 
   @@unique([tenantId, id], map: "api_keys_tenant_id_key")
   @@index([tenantId, revokedAt], map: "api_keys_tenant_revoked_idx")
@@ -221,6 +232,7 @@ model Entity {
   mergedEntities     Entity[]                 @relation("EntityMergedInto")
   operationsAsSource EntityOperation[]        @relation("EntityOperationSource")
   operationsAsTarget EntityOperation[]        @relation("EntityOperationTarget")
+  reviewDecisions    ReviewDecision[]
 
   @@unique([tenantId, id], map: "entities_tenant_id_key")
   @@index([tenantId, entityType], map: "entities_tenant_entity_type_idx")
@@ -265,12 +277,14 @@ model EntityCanonicalVersion {
   triggerSourceRecordId   String?                   @map("trigger_source_record_id") @db.Uuid
   triggerOperation        CanonicalTriggerOperation @map("trigger_operation")
   entityOperationId       String?                   @map("entity_operation_id") @db.Uuid
+  reviewDecisionId        String?                   @map("review_decision_id") @db.Uuid
   canonicalizationVersion String                    @map("canonicalization_version") @db.VarChar(50)
   createdAt               DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
   tenant                  Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "entity_canonical_versions_tenant_fkey")
   entity                  Entity                    @relation(fields: [tenantId, entityId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_canonical_versions_tenant_entity_fkey")
   triggerSourceRecord     SourceRecord?             @relation(fields: [tenantId, triggerSourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_canonical_versions_tenant_trigger_record_fkey")
   entityOperation         EntityOperation?          @relation(fields: [tenantId, entityOperationId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_canonical_versions_tenant_operation_fkey")
+  reviewDecision          ReviewDecision?           @relation(fields: [tenantId, reviewDecisionId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_canonical_versions_tenant_review_decision_fkey")
 
   @@unique([tenantId, entityId, version], map: "entity_canonical_versions_tenant_entity_version_key")
   @@index([tenantId, entityId, version(sort: Desc)], map: "entity_canonical_versions_tenant_entity_version_idx")
@@ -287,12 +301,14 @@ model EntityRecordLink {
   algorithmVersion      String           @map("algorithm_version") @db.VarChar(50)
   explanation           Json             @default("{\"candidate_count\":0,\"features\":{},\"contradictions\":[]}")
   lastEntityOperationId String?          @map("last_entity_operation_id") @db.Uuid
+  reviewDecisionId      String?          @map("review_decision_id") @db.Uuid
   createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tenant                Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_fkey")
   entity                Entity           @relation(fields: [tenantId, entityId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_entity_fkey")
   sourceRecord          SourceRecord     @relation(fields: [tenantId, sourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_source_record_fkey")
   lastEntityOperation   EntityOperation? @relation(fields: [tenantId, lastEntityOperationId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_last_operation_fkey")
+  reviewDecision        ReviewDecision?  @relation(fields: [tenantId, reviewDecisionId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "entity_record_links_tenant_review_decision_fkey")
 
   @@unique([tenantId, sourceRecordId], map: "entity_record_links_tenant_record_key")
   @@index([tenantId, entityId], map: "entity_record_links_tenant_entity_idx")
@@ -366,6 +382,8 @@ model ReviewCase {
   score                   Decimal          @db.Decimal(5, 4)
   explanation             Json
   algorithmVersion        String           @map("algorithm_version") @db.VarChar(50)
+  sourceRecordVersion     Int?             @map("source_record_version")
+  candidateRecordVersion  Int?             @map("candidate_record_version")
   createdAt               DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt               DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   tenant                  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_tenant_fkey")
@@ -373,10 +391,38 @@ model ReviewCase {
   candidateSourceRecord   SourceRecord     @relation("ReviewCaseCandidateRecord", fields: [tenantId, candidateSourceRecordId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_tenant_candidate_record_fkey")
   candidateEntity         Entity           @relation(fields: [tenantId, candidateEntityId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_tenant_candidate_entity_fkey")
   matchFeature            MatchFeature     @relation(fields: [tenantId, matchFeatureId, sourceRecordId, candidateSourceRecordId, candidateEntityId], references: [tenantId, id, sourceRecordId, candidateSourceRecordId, candidateEntityId], onDelete: Restrict, onUpdate: NoAction, map: "review_cases_selected_match_feature_fkey")
+  humanDecision           ReviewDecision?
 
+  @@unique([tenantId, id], map: "review_cases_tenant_id_key")
   @@unique([tenantId, sourceRecordId], map: "review_cases_tenant_source_record_key")
   @@unique([tenantId, matchFeatureId, sourceRecordId, candidateSourceRecordId, candidateEntityId], map: "review_cases_selected_match_feature_key")
   @@index([tenantId, status, createdAt], map: "review_cases_tenant_status_created_idx")
   @@index([tenantId, candidateEntityId], map: "review_cases_tenant_candidate_entity_idx")
   @@map("review_cases")
+}
+
+model ReviewDecision {
+  id                        String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                  String                   @map("tenant_id") @db.Uuid
+  reviewCaseId              String                   @map("review_case_id") @db.Uuid
+  decision                  ReviewOutcome
+  reason                    String                   @db.VarChar(500)
+  actorApiKeyId             String                   @map("actor_api_key_id") @db.Uuid
+  entityId                  String                   @map("entity_id") @db.Uuid
+  sourceRecordVersion       Int                      @map("source_record_version")
+  candidateRecordVersion    Int                      @map("candidate_record_version")
+  candidateCanonicalVersion Int                      @map("candidate_canonical_version")
+  canonicalVersion          Int                      @map("canonical_version")
+  policyVersion             String                   @default("review-v1") @map("policy_version") @db.VarChar(50)
+  createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  tenant                    Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "review_decisions_tenant_fkey")
+  reviewCase                ReviewCase               @relation(fields: [tenantId, reviewCaseId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "review_decisions_tenant_case_fkey")
+  actorApiKey               ApiKey                   @relation(fields: [tenantId, actorApiKeyId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "review_decisions_tenant_actor_fkey")
+  entity                    Entity                   @relation(fields: [tenantId, entityId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "review_decisions_tenant_entity_fkey")
+  links                     EntityRecordLink[]
+  canonicalVersions         EntityCanonicalVersion[]
+
+  @@unique([tenantId, id], map: "review_decisions_tenant_id_key")
+  @@unique([tenantId, reviewCaseId], map: "review_decisions_tenant_case_key")
+  @@map("review_decisions")
 }

@@ -24,6 +24,7 @@ const expectedEnums = [
   'entity_type',
   'match_decision',
   'review_case_status',
+  'review_outcome',
   'tenant_status',
 ];
 const expectedIndexes = [

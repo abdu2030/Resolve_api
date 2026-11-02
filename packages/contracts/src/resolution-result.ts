@@ -24,6 +24,7 @@ export interface ResolutionResult {
   decision: ResolutionDecision;
   entity_id: string;
   entity_operation_id?: string;
+  review_decision_id?: string;
   explanation: ResolutionExplanation;
   matched_against?: string;
   record_id: string;

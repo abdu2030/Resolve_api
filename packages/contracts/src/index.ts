@@ -13,3 +13,4 @@ export * from './normalization-policy.js';
 export * from './person-input.dto.js';
 export * from './record-input.js';
 export * from './resolution-result.js';
+export * from './review.dto.js';
