@@ -4,6 +4,15 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
+Week 2 Day 7 runs all eight golden pairs through the authenticated HTTP resolver
+against PostgreSQL and reports precision, automatic-match recall, false positives,
+review rate, automatic resolution, and positive candidate recall. Run
+`npm run evaluate:golden`; see the
+[Day 7 evaluation and PowerShell testing guide](docs/testing/week2-day7-quality-powershell.md)
+for setup, metric definitions, the measured baseline, and the known blocking miss.
+Identity labels describe authored synthetic scenarios separately from policy
+expectations. Scoring weights, thresholds, and algorithm versions are unchanged.
+
 Week 2 Day 6 adds review listing/evidence inspection and transactional
 approve/reject decisions with immutable human outcomes. Approval links the
 record to the proposed entity; rejection creates a separate entity. Both
