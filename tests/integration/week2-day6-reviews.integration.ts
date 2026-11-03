@@ -97,7 +97,7 @@ describe('Week 2 Day 6 review HTTP and persistence', () => {
           prefix: value.split('.')[0]!,
           keyHash: hashApiKey(value),
           scopes,
-          revokedAt,
+          ...(revokedAt === undefined ? {} : { revokedAt }),
         },
       })
     ).id;
@@ -107,7 +107,7 @@ describe('Week 2 Day 6 review HTTP and persistence', () => {
   }
   function post(
     id: string,
-    input: unknown,
+    input: object,
     idempotencyKey: string | undefined = randomUUID(),
     auth = token,
   ): request.Test {
@@ -117,7 +117,7 @@ describe('Week 2 Day 6 review HTTP and persistence', () => {
   }
   async function ingest(
     data: Record<string, unknown>,
-    externalId = randomUUID(),
+    externalId: string = randomUUID(),
     idem?: string,
     type = 'person',
   ): Promise<RecordIngestionResult> {
@@ -184,7 +184,7 @@ describe('Week 2 Day 6 review HTTP and persistence', () => {
       )
     ).rows[0]!.value;
   }
-  async function denied(id: string, value: unknown, code: string, status = 409): Promise<void> {
+  async function denied(id: string, value: object, code: string, status = 409): Promise<void> {
     const before = await state();
     const response = await post(id, value);
     expect(response.status).toBe(status);

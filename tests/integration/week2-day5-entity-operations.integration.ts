@@ -90,7 +90,7 @@ describe('Week 2 Day 5 entity operations HTTP', () => {
           prefix: value.split('.')[0]!,
           keyHash: hashApiKey(value),
           scopes,
-          revokedAt,
+          ...(revokedAt === undefined ? {} : { revokedAt }),
         },
       })
     ).id;
@@ -131,8 +131,8 @@ describe('Week 2 Day 5 entity operations HTTP', () => {
   function post(
     id: string,
     action: string,
-    body: unknown,
-    idempotencyKey = randomUUID(),
+    body: object,
+    idempotencyKey: string = randomUUID(),
     auth = token,
   ): request.Test {
     return request(server)
@@ -157,7 +157,7 @@ describe('Week 2 Day 5 entity operations HTTP', () => {
   async function denied(
     id: string,
     action: string,
-    body: unknown,
+    body: object,
     status: number,
     code: string,
     idempotencyKey = randomUUID(),
