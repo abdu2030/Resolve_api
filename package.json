@@ -13,6 +13,7 @@
   "scripts": {
     "auth:bootstrap": "tsx --env-file=.env apps/api/src/auth/bootstrap-api-key.ts",
     "build": "npm run build -w @resolve/contracts && npm run build -w @resolve/config && npm run build -w @resolve/database && npm run build -w @resolve/normalization && npm run build -w @resolve/matching && npm run build -w @resolve/api && npm run build -w @resolve/worker",
+    "evaluate:golden": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --config jest.integration.config.cjs --runInBand --runTestsByPath tests/integration/week2-day7-quality.integration.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
