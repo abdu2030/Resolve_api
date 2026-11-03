@@ -1,0 +1,63 @@
+{
+  "version": "quality-v1",
+  "dataset_version": "mvp-v1",
+  "label_origin": "Authored synthetic identities, independent of scorer decisions; these labels are scenario assumptions, not verified customer identities.",
+  "cases": [
+    {
+      "id": "person-email-phone-format-auto-match",
+      "same_identity": true,
+      "identity_rationale": "One synthetic person exported with different capitalization and local phone formatting.",
+      "expected_pipeline_decision": "AUTO_MATCH",
+      "expected_candidate_count": 1
+    },
+    {
+      "id": "person-email-with-missing-phone-auto-match",
+      "same_identity": true,
+      "identity_rationale": "One synthetic person whose second source omits their phone and abbreviates their surname.",
+      "expected_pipeline_decision": "AUTO_MATCH",
+      "expected_candidate_count": 1
+    },
+    {
+      "id": "person-unicode-name-review",
+      "same_identity": true,
+      "identity_rationale": "The scenario assigns both records to one synthetic person who changed phone; the second source omits accents. This identity cannot be established from the payload alone.",
+      "expected_pipeline_decision": "NO_MATCH",
+      "expected_candidate_count": 0
+    },
+    {
+      "id": "person-shared-name-no-match",
+      "same_identity": false,
+      "identity_rationale": "Two distinct synthetic people share a common name but have separate contact details.",
+      "expected_pipeline_decision": "NO_MATCH",
+      "expected_candidate_count": 0
+    },
+    {
+      "id": "company-abbreviation-domain-auto-match",
+      "same_identity": true,
+      "identity_rationale": "One synthetic company exported with an abbreviated legal name and a www domain prefix.",
+      "expected_pipeline_decision": "AUTO_MATCH",
+      "expected_candidate_count": 1
+    },
+    {
+      "id": "company-registration-conflict-review",
+      "same_identity": false,
+      "identity_rationale": "Two separately registered synthetic legal companies share a trading name and website. Their trusted registration IDs identify different legal entities.",
+      "expected_pipeline_decision": "REVIEW",
+      "expected_candidate_count": 1
+    },
+    {
+      "id": "company-common-name-country-no-match",
+      "same_identity": false,
+      "identity_rationale": "Two distinct synthetic companies operate in separate countries with separate websites.",
+      "expected_pipeline_decision": "NO_MATCH",
+      "expected_candidate_count": 0
+    },
+    {
+      "id": "company-renamed-domain-review",
+      "same_identity": true,
+      "identity_rationale": "The scenario assigns both records to one synthetic company before and after a rename. A retained domain alone does not prove that identity in real data.",
+      "expected_pipeline_decision": "REVIEW",
+      "expected_candidate_count": 1
+    }
+  ]
+}
