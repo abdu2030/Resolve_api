@@ -1,4 +1,6 @@
+import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { readFile, readdir } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { resolve } from 'node:path';
@@ -9,6 +11,7 @@ import { Client } from 'pg';
 import request from 'supertest';
 import type { ResolveApplication } from '../../apps/api/src/application.js';
 import { generateApiKey } from '../../apps/api/src/auth/api-key.js';
+import type { AcceptedBatchDto, BatchJobDto } from '../../apps/api/src/jobs/batch-job.dto.js';
 import type { createWorker } from '../../apps/worker/src/worker.js';
 
 describe('Week 3 batch HTTP and worker', () => {
@@ -32,6 +35,7 @@ describe('Week 3 batch HTTP and worker', () => {
   let readToken: string;
   let writeToken: string;
   let queuedJob: string;
+  const childWorkers = new Set<ChildProcess>();
 
   beforeAll(async () => {
     await db.connect();
@@ -75,7 +79,8 @@ describe('Week 3 batch HTTP and worker', () => {
   afterAll(async () => {
     try {
       await worker?.close();
-      if (worker) {
+      await Promise.all([...childWorkers].map(stopWorker));
+      if (ownsSchema) {
         const redis = new Redis({
           host: process.env.REDIS_HOST!,
           port: Number(process.env.REDIS_PORT!),
@@ -135,15 +140,80 @@ describe('Week 3 batch HTTP and worker', () => {
     return request(server).get(`/v1/jobs/${id}`).auth(auth, { type: 'bearer' });
   }
 
-  async function waitForJob(id: string): Promise<unknown> {
-    for (let attempt = 0; attempt < 200; attempt++) {
+  async function waitForJob(id: string, timeoutMs = 20_000): Promise<BatchJobDto> {
+    const deadline = Date.now() + timeoutMs;
+    let current: BatchJobDto | undefined;
+    while (Date.now() < deadline) {
       const response = await status(id).expect(200);
-      if (['SUCCEEDED', 'FAILED'].includes((response.body as { status: string }).status)) {
-        return response.body as unknown;
-      }
+      current = response.body as BatchJobDto;
+      if (current.status === 'SUCCEEDED' || current.status === 'FAILED') return current;
       await delay(100);
     }
-    throw new Error('Batch did not reach a terminal state');
+    throw new Error(
+      `Batch timed out in ${current?.status} with ${current?.processed_records} processed`,
+    );
+  }
+
+  async function withAdvisoryLock<T>(identity: string, run: () => Promise<T>): Promise<T> {
+    await db.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [identity]);
+    try {
+      return await run();
+    } finally {
+      await db.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [identity]);
+    }
+  }
+
+  async function waitForLockWaiters(
+    identity: string,
+    minimum: number,
+    timeoutMs = 3500,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const { rows } = await db.query<{ waiting: number }>(
+        `SELECT count(*)::int AS waiting FROM pg_locks
+         WHERE locktype = 'advisory' AND mode = 'ExclusiveLock' AND NOT granted
+           AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+           AND classid::bigint = ((hashtextextended($1, 0) >> 32) & 4294967295)
+           AND objid::bigint = (hashtextextended($1, 0) & 4294967295) AND objsubid = 1`,
+        [identity],
+      );
+      if (rows[0]!.waiting >= minimum) return;
+      await delay(15);
+    }
+    throw new Error(`Expected at least ${minimum} transactions waiting on the advisory lock`);
+  }
+
+  async function recordLock(externalId: string): Promise<string> {
+    const source = await prisma.sourceSystem.findUniqueOrThrow({
+      where: { tenantId_name: { tenantId, name: 'crm' } },
+    });
+    return `record:${tenantId}:${source.id}:${externalId}`;
+  }
+
+  async function startChildWorker(): Promise<{ child: ChildProcess; logs: () => string }> {
+    const child = spawn(process.execPath, [resolve('apps/worker/dist/main.js')], {
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    childWorkers.add(child);
+    let output = '';
+    for (const stream of [child.stdout, child.stderr]) {
+      stream?.setEncoding('utf8').on('data', (chunk: string) => {
+        output = `${output}${chunk}`.slice(-4000);
+      });
+    }
+    child.once('exit', () => childWorkers.delete(child));
+    await once(child, 'spawn');
+    return { child, logs: () => output };
+  }
+
+  async function stopWorker(child: ChildProcess): Promise<void> {
+    if (child.exitCode !== null || child.signalCode !== null || !child.pid) return;
+    const exited = once(child, 'exit');
+    child.kill('SIGKILL');
+    await exited;
   }
 
   it('durably accepts and replays an authenticated batch before a worker is running', async () => {
@@ -294,5 +364,161 @@ describe('Week 3 batch HTTP and worker', () => {
         { index: 1, result: { operation: 'CREATED' }, error: null },
       ],
     });
+  });
+
+  it('commits one job when identical batches and a conflicting payload contend for one key', async () => {
+    const key = 'concurrent-batch';
+    const identity = `idempotency:${tenantId}:${key}`;
+    const record = { ...records[0]!, external_id: 'concurrent-batch' };
+    const body = { records: [record] };
+    const pending: Promise<request.Response>[] = [];
+    try {
+      await withAdvisoryLock(identity, async () => {
+        pending.push(submit(body, key).then((response) => response));
+        await waitForLockWaiters(identity, 1);
+        pending.push(
+          submit(body, key).then((response) => response),
+          submit({ records: [{ ...record, data: { name: 'Different person' } }] }, key).then(
+            (response) => response,
+          ),
+        );
+        await waitForLockWaiters(identity, 3);
+      });
+      const [first, duplicate, conflict] = await Promise.all(pending);
+      expect(first?.status).toBe(202);
+      expect(duplicate?.status).toBe(202);
+      expect(duplicate?.body).toEqual(first?.body);
+      expect(duplicate?.headers['idempotency-replayed']).toBe('true');
+      expect(conflict?.status).toBe(409);
+      expect(conflict?.body).toMatchObject({ error: { code: 'IDEMPOTENCY_KEY_REUSED' } });
+      const { job_id: id } = first!.body as AcceptedBatchDto;
+      expect(await prisma.idempotencyRequest.count({ where: { tenantId, key } })).toBe(1);
+      expect(
+        await prisma.jobRecord.findMany({
+          where: { tenantId, input: { path: ['external_id'], equals: record.external_id } },
+          select: { jobId: true, position: true },
+        }),
+      ).toEqual([{ jobId: id, position: 0 }]);
+      expect((await waitForJob(id)).attempts).toBe(1);
+    } finally {
+      await Promise.allSettled(pending);
+    }
+  });
+
+  it('serializes the worker and a direct request for the same source identity', async () => {
+    const record = {
+      source: 'crm',
+      external_id: 'shared-ingestion-lock',
+      entity_type: 'person',
+      data: { name: 'New Concurrent Person' },
+    };
+    const identity = await recordLock(record.external_id);
+    let direct: Promise<request.Response> | undefined;
+    try {
+      const id = await withAdvisoryLock(identity, async () => {
+        const accepted = await submit({ records: [record] }, 'race-http').expect(202);
+        await waitForLockWaiters(identity, 1);
+        direct = request(server)
+          .post('/v1/records')
+          .auth(token, { type: 'bearer' })
+          .send(record)
+          .then((response) => response);
+        await waitForLockWaiters(identity, 2);
+        return (accepted.body as AcceptedBatchDto).job_id;
+      });
+      const response = await direct;
+      expect(response?.status).toBe(200);
+      const batch = await waitForJob(id);
+      expect(batch).toMatchObject({ status: 'SUCCEEDED', attempts: 1, processed_records: 1 });
+      const result = batch.results[0]?.result;
+      expect(result).toMatchObject({ operation: 'CREATED', version: 1 });
+      expect(response?.body).toMatchObject({
+        record_id: result?.record_id,
+        entity_id: result?.entity_id,
+        operation: 'UNCHANGED',
+        version: 1,
+      });
+      const rows = await prisma.sourceRecord.findMany({
+        where: { tenantId, externalId: record.external_id },
+        include: { entityRecordLink: true, _count: { select: { versions: true } } },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        _count: { versions: 1 },
+        entityRecordLink: { entityId: result?.entity_id },
+      });
+      expect(
+        await prisma.entityCanonicalVersion.count({
+          where: { tenantId, triggerSourceRecordId: result!.record_id },
+        }),
+      ).toBe(1);
+    } finally {
+      await direct?.catch(() => undefined);
+    }
+  });
+
+  it('recovers an active BullMQ job after killing the worker with one item committed', async () => {
+    await worker?.close();
+    worker = undefined;
+    const batch = [
+      { ...records[0]!, external_id: 'crash-1' },
+      { ...records[0]!, external_id: 'crash-2' },
+    ];
+    const identity = await recordLock(batch[1]!.external_id);
+    const { id, partial } = await withAdvisoryLock(identity, async () => {
+      const accepted = await submit({ records: batch }, 'crash-recovery').expect(202);
+      const { job_id: id } = accepted.body as AcceptedBatchDto;
+      const first = await startChildWorker();
+      let partial: BatchJobDto['results'][number] | undefined;
+      try {
+        await waitForLockWaiters(identity, 1, 20_000);
+        const response = await status(id).expect(200);
+        const state = response.body as BatchJobDto;
+        expect(state).toMatchObject({ status: 'RUNNING', processed_records: 1, attempts: 1 });
+        const result = state.results[0];
+        expect(result).toMatchObject({ index: 0, result: { operation: 'CREATED', version: 1 } });
+        expect(
+          await prisma.sourceRecord.count({ where: { tenantId, externalId: 'crash-2' } }),
+        ).toBe(0);
+        partial = result;
+      } catch (cause) {
+        throw new Error(`Could not interrupt the first worker\n${first.logs()}`, { cause });
+      } finally {
+        await stopWorker(first.child);
+      }
+      expect(first.child.signalCode).toBe('SIGKILL');
+      return { id, partial };
+    });
+    const replacement = await startChildWorker();
+    try {
+      const recovered = await waitForJob(id, 75_000);
+      expect(recovered).toMatchObject({
+        status: 'SUCCEEDED',
+        attempts: 2,
+        processed_records: 2,
+        failed_records: 0,
+      });
+      expect(recovered.results[0]).toEqual(partial);
+      expect(recovered.results[1]).toMatchObject({
+        index: 1,
+        result: { operation: 'CREATED', version: 1 },
+      });
+      for (const { result } of recovered.results) {
+        expect(
+          await prisma.sourceRecordVersion.count({
+            where: { tenantId, sourceRecordId: result!.record_id },
+          }),
+        ).toBe(1);
+        expect(
+          await prisma.entityRecordLink.count({
+            where: { tenantId, sourceRecordId: result!.record_id },
+          }),
+        ).toBe(1);
+      }
+    } catch (cause) {
+      throw new Error(`Could not recover the stalled job\n${replacement.logs()}`, { cause });
+    } finally {
+      await stopWorker(replacement.child);
+    }
   });
 });
