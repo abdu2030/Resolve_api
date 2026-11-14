@@ -1,5 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsDefined, IsEnum, IsString, Matches, MaxLength, ValidateNested } from 'class-validator';
+import {
+  IsDefined,
+  IsEnum,
+  IsObject,
+  IsString,
+  Matches,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
 
 import { CompanyInputDto } from './company-input.dto.js';
 import { EntityType } from './entity-type.js';
@@ -29,6 +37,7 @@ export class RecordInputDto {
   entity_type!: EntityType;
 
   @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type((options) =>
     (options?.object as Record<string, unknown> | undefined)?.entity_type === EntityType.Company

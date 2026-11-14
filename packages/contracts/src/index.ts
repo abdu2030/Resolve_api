@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 
 export * from './record-ingestion-result.js';
+export * from './batch-input.js';
 export * from './create-source.dto.js';
 export * from './api-scope.js';
 export * from './address-input.dto.js';

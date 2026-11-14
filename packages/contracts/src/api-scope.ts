@@ -1,6 +1,7 @@
 export const API_SCOPES = [
   'sources:write',
   'records:write',
+  'jobs:read',
   'entities:read',
   'entities:merge',
   'entities:split',
