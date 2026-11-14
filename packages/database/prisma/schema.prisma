@@ -82,6 +82,16 @@ enum ReviewOutcome {
   @@map("review_outcome")
 }
 
+enum JobStatus {
+  QUEUED
+  RUNNING
+  RETRYING
+  SUCCEEDED
+  FAILED
+
+  @@map("job_status")
+}
+
 model Tenant {
   id                   String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                 String                   @db.VarChar(120)
@@ -103,6 +113,7 @@ model Tenant {
   canonicalVersions    EntityCanonicalVersion[]
   entityOperations     EntityOperation[]
   reviewDecisions      ReviewDecision[]
+  jobs                 Job[]
 
   @@map("tenants")
 }
@@ -210,6 +221,40 @@ model IdempotencyRequest {
   @@unique([tenantId, key], map: "idempotency_requests_tenant_key_key")
   @@index([tenantId, createdAt], map: "idempotency_requests_tenant_created_idx")
   @@map("idempotency_requests")
+}
+
+model Job {
+  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String      @map("tenant_id") @db.Uuid
+  status           JobStatus   @default(QUEUED)
+  totalRecords     Int         @map("total_records")
+  processedRecords Int         @default(0) @map("processed_records")
+  failedRecords    Int         @default(0) @map("failed_records")
+  attempts         Int         @default(0)
+  errorCode        String?     @map("error_code") @db.VarChar(64)
+  dispatchAfter    DateTime    @default(now()) @map("dispatch_after") @db.Timestamptz(3)
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  finishedAt       DateTime?   @map("finished_at") @db.Timestamptz(3)
+  tenant           Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "jobs_tenant_fkey")
+  records          JobRecord[]
+
+  @@unique([tenantId, id], map: "jobs_tenant_id_key")
+  @@index([status, dispatchAfter, id], map: "jobs_dispatch_idx")
+  @@map("jobs")
+}
+
+model JobRecord {
+  tenantId  String  @map("tenant_id") @db.Uuid
+  jobId     String  @map("job_id") @db.Uuid
+  position  Int
+  input     Json
+  result    Json?
+  errorCode String? @map("error_code") @db.VarChar(64)
+  job       Job     @relation(fields: [tenantId, jobId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "job_records_tenant_job_fkey")
+
+  @@id([tenantId, jobId, position], map: "job_records_pkey")
+  @@map("job_records")
 }
 
 model Entity {

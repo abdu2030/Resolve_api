@@ -22,6 +22,7 @@ const expectedEnums = [
   'entity_operation_type',
   'entity_status',
   'entity_type',
+  'job_status',
   'match_decision',
   'review_case_status',
   'review_outcome',
