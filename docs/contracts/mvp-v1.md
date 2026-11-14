@@ -2,6 +2,47 @@
 
 Resolve supports `person` and `company` records. External JSON uses snake_case.
 
+## Asynchronous batch resolution (Week 3 Day 1)
+
+`POST /v1/records/batch` requires `records:write` and an `Idempotency-Key`.
+Its JSON body is `{ "records": [...] }` with 1 to 100 standard
+`POST /v1/records` request objects. Items can span multiple registered sources
+owned by the same tenant. The API validates every item and source before
+accepting the batch, within the configured request body limit.
+
+An accepted submission returns `202`, a `Location: /v1/jobs/{jobId}` header,
+and `{ "job_id": "<uuid>", "status": "QUEUED" }`. A replay returns the
+original 202 response with `Idempotency-Replayed: true`. Reusing a tenant's key
+with a different item order, a different payload, or another operation returns
+`409 IDEMPOTENCY_KEY_REUSED`.
+
+`GET /v1/jobs/{jobId}` requires `jobs:read`. Foreign or missing jobs return
+`404 JOB_NOT_FOUND`. A successful read returns:
+
+- `job_id`, `status`, `created_at`, and nullable `finished_at`.
+- `total_records`, `processed_records`, `succeeded_records`, `failed_records`, and `attempts`.
+- `results`, in submitted order, with zero-based `index` and either the standard
+  ingestion `result` or an `error` containing a stable `code`. The other field is
+  `null`. Results only include finished items. `REVIEW` counts as successful ingestion.
+- `error`, which is `null` until the job fails, then contains a stable `code`.
+
+| Status      | Meaning                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| `QUEUED`    | Durably accepted and waiting for the worker.                                              |
+| `RUNNING`   | The worker has started an attempt.                                                        |
+| `RETRYING`  | A processing attempt failed and a retry is pending.                                       |
+| `SUCCEEDED` | Every record completed successfully.                                                      |
+| `FAILED`    | The batch has one or more record errors, exhausted retries, or could not finish delivery. |
+
+The worker processes items in submitted order. A permanent item error such as
+`ENTITY_TYPE_CONFLICT` is recorded for that item and processing continues. If
+any item is rejected, the completed job reports `BATCH_RECORDS_FAILED`. A
+transient failure retries the first unfinished item up to three job attempts,
+with exponential backoff starting at one second. Exhaustion returns
+`BATCH_RETRIES_EXHAUSTED`, with already committed results still available.
+Repeated stalled deliveries can end with `BATCH_DELIVERY_FAILED`. An inactive
+tenant stops processing with `TENANT_INACTIVE`.
+
 ## Human review (`review-v1`, Week 2 Day 6)
 
 | Endpoint                              | Scope           | Behavior                                                                                                                  |
@@ -87,7 +128,7 @@ only from the authenticated key. `POST /v1/sources` requires `sources:write`,
 `POST /v1/records` requires `records:write`, and all entity reads require
 `entities:read`. Merge requires `entities:merge`; both split modes require
 `entities:split`. Review reads require `reviews:read`; decisions require
-`reviews:write`. Bootstrap keys include all seven scopes by default. Existing
+`reviews:write`. Job polling requires `jobs:read`. Bootstrap keys include all eight scopes by default. Existing
 keys keep their stored scopes.
 
 `POST /v1/sources` accepts:

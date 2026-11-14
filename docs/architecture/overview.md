@@ -1,5 +1,23 @@
 # Resolve API Architecture
 
+## Batch resolution
+
+PostgreSQL commits the job, ordered inputs, and idempotency response in one
+transaction. The worker scans a bounded set of due jobs and adds their IDs to
+BullMQ. A job accepted during a worker or Redis outage can run once both are
+available. Due rows are claimed with `FOR UPDATE SKIP LOCKED` and revisited after
+a short delay. The queue uses the PostgreSQL job UUID as its delivery ID and
+stores only tenant and job IDs.
+
+Use the same `BATCH_QUEUE_PREFIX` for all worker replicas of a deployment.
+Give each PostgreSQL deployment a different prefix when they share Redis.
+
+The worker imports the same Nest ingestion module as the API. It commits each
+item's resolution, outcome, and progress in one transaction. A tenant-scoped
+job row lock and a persisted attempt number prevent an earlier worker from
+committing after a recovered delivery starts a new attempt. The status endpoint
+reads counters and outcomes from one database snapshot.
+
 ## Review workflow boundary (Week 2 Day 6)
 
 `reviews/` contains thin scoped controllers, bounded keyset queries, pure stale

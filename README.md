@@ -4,6 +4,13 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
+Week 3 Day 1 adds asynchronous batch resolution and job status with per-record
+results. Submit up to 100 records to `POST /v1/records/batch` with an
+`Idempotency-Key`, then track progress at `GET /v1/jobs/{jobId}` with the
+`jobs:read` scope. The BullMQ worker runs the same resolver as single-record
+ingestion and resumes from the first unfinished item on retry. See the
+[PowerShell batch testing guide](docs/testing/week3-day1-batch-powershell.md).
+
 Week 2 Day 7 runs all eight golden pairs through the authenticated HTTP resolver
 against PostgreSQL and reports precision, automatic-match recall, false positives,
 review rate, automatic resolution, and positive candidate recall. Run
@@ -19,9 +26,8 @@ record to the proposed entity; rejection creates a separate entity. Both
 preserve machine evidence and record actor/reason and canonical history.
 See the [Day 6 PowerShell testing guide](docs/testing/week2-day6-reviews-powershell.md)
 for setup commands, review requests, and detailed expected results.
-Review reads require `reviews:read`; decisions require `reviews:write` and
-Idempotency-Key. Existing API keys need the new scopes; bootstrap defaults now
-include all seven supported scopes. Matching weights/thresholds remain unchanged.
+Review reads require `reviews:read`. Decisions require `reviews:write` and
+`Idempotency-Key`. Bootstrap defaults include both review scopes.
 
 Week 1 Days 1-7 provide the repository foundation, locked MVP contracts, NestJS application shells, PostgreSQL and Redis infrastructure, tenant API-key authentication, source registration, raw record ingestion, deterministic Person/Company normalization, bounded candidate blocking, and a realistic integration checkpoint. Week 2 Days 1-5 add deterministic comparison, `features-v1` extraction, versioned `rules-0.1.0` scoring, the live resolver pipeline, `canonicalization-v1` survivorship, field provenance, immutable canonical history, tenant-scoped entity reads, and safe manual merge, selected-record split, and explicit merge reversal.
 
@@ -63,6 +69,7 @@ npm run test -- packages/matching/test
 | `NODE_ENV`                | Runtime mode: `development`, `test`, or `production`   | `development`                       |
 | `API_PORT`                | Host port used by the API                              | `3000`                              |
 | `BLOCKING_MAX_CANDIDATES` | Final candidate cap; integer from 1 through 1000       | `100`                               |
+| `BATCH_QUEUE_PREFIX`      | Redis queue namespace for the worker                   | `resolve`                           |
 | `DATABASE_URL`            | PostgreSQL connection string used by Prisma            | Local Compose URL in `.env.example` |
 | `TEST_DATABASE_URL`       | Optional URL used by database integration tests        | `DATABASE_URL`, then local Compose  |
 | `REDIS_HOST`              | Redis hostname                                         | `localhost`                         |
@@ -119,7 +126,7 @@ Apply the migrations, then run the bootstrap command:
 npm run auth:bootstrap -- --tenant-name "Local Demo" --environment test
 ```
 
-The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears; PostgreSQL stores only its SHA-256 hash. The default key has `sources:write`, `records:write`, `entities:read`, `entities:merge`, `entities:split`, `reviews:read`, and `reviews:write` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name. Existing keys are not upgraded automatically. Each bootstrap invocation creates a new tenant and key; it does not add a key to a previously created tenant.
+The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears. PostgreSQL stores its SHA-256 hash. The default key has `sources:write`, `records:write`, `jobs:read`, `entities:read`, `entities:merge`, `entities:split`, `reviews:read`, and `reviews:write` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name. Existing keys keep their original scopes. Each bootstrap invocation creates a new tenant and key.
 
 ## Manual canonicalization validation in PowerShell
 
