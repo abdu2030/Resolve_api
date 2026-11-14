@@ -4,6 +4,10 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
+Week 3 Day 2 checks concurrent batch submissions, shared record locks,
+worker crash recovery, and overlapping merges against PostgreSQL and Redis.
+See the [concurrency testing guide](docs/testing/week3-day2-concurrency-powershell.md).
+
 Week 3 Day 1 adds asynchronous batch resolution and job status with per-record
 results. Submit up to 100 records to `POST /v1/records/batch` with an
 `Idempotency-Key`, then track progress at `GET /v1/jobs/{jobId}` with the
@@ -418,7 +422,8 @@ Add `-v` only when you intend to delete local PostgreSQL and Redis data.
 The integration suite creates a unique PostgreSQL schema, deploys the migrations twice, verifies the database objects and integrity rules, and removes the test schema afterward.
 
 ```powershell
-docker compose up -d --wait postgres
+docker compose up -d --wait postgres redis
+npm run build
 npm run test:integration
 ```
 
@@ -432,8 +437,8 @@ npm run format:check
 npm run lint
 npm run typecheck
 npm test
-npm run test:integration
 npm run build
+npm run test:integration
 docker compose config
 ```
 
