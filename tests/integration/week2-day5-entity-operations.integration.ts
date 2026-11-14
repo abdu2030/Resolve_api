@@ -962,17 +962,20 @@ describe('Week 2 Day 5 entity operations HTTP', () => {
       expected_target_version: 1,
       reason: 'Concurrent',
     };
-    const first = post(b.entity_id, 'merge', body).then((value) => value);
+    const winningKey = randomUUID();
+    const losingKey = randomUUID();
+    const first = post(b.entity_id, 'merge', body, winningKey).then((value) => value);
     let second: Promise<request.Response> | undefined;
     try {
       await ready.promise;
-      second = post(c.entity_id, 'merge', body).then((value) => value);
+      second = post(c.entity_id, 'merge', body, losingKey).then((value) => value);
       await waiter('ExclusiveLock');
     } finally {
       release.release();
       spy.mockRestore();
     }
-    expect((await first).status).toBe(200);
+    const winner = await first;
+    expect(winner.status).toBe(200);
     const conflict = await second;
     expect(conflict.status).toBe(409);
     expect(conflict.body).toMatchObject({ error: { code: 'ENTITY_NOT_ACTIVE' } });
@@ -981,6 +984,25 @@ describe('Week 2 Day 5 entity operations HTTP', () => {
     expect(
       await prisma.entityRecordLink.count({ where: { tenantId, entityId: b.entity_id } }),
     ).toBe(2);
+    const [audit] = await prisma.entityOperation.findMany({ where: { tenantId } });
+    expect(audit).toMatchObject({
+      type: 'MERGE',
+      sourceEntityId: a.entity_id,
+      targetEntityId: b.entity_id,
+      actorApiKeyId: actorId,
+      reason: body.reason,
+      recordIds: [a.record_id],
+    });
+    expect(
+      await prisma.entityCanonicalVersion.count({
+        where: { tenantId, entityOperationId: audit!.id },
+      }),
+    ).toBe(2);
+    expect(await prisma.idempotencyRequest.count({ where: { tenantId, key: losingKey } })).toBe(0);
+    const replay = await post(b.entity_id, 'merge', body, winningKey).expect(200);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    expect(replay.body).toEqual(winner.body);
+    expect(await prisma.entityOperation.count({ where: { tenantId } })).toBe(1);
   });
   it('waits for an ingestion shared gate and then validates its latest canonical version and membership', async () => {
     const external = randomUUID();
