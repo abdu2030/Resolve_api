@@ -1,11 +1,7 @@
-import 'reflect-metadata';
-
-import { NestFactory } from '@nestjs/core';
-
-import { AppModule } from './app.module.js';
+import { createWorker } from './worker.js';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.createApplicationContext(AppModule);
+  const app = await createWorker();
   app.enableShutdownHooks();
 }
 

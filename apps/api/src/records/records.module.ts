@@ -1,12 +1,9 @@
 import { Module } from '@nestjs/common';
-import { CanonicalizationModule } from '../canonicalization/canonicalization.module.js';
-import { ResolutionModule } from '../resolution/resolution.module.js';
-import { RecordIngestionService } from './record-ingestion.service.js';
+import { RecordIngestionModule } from './record-ingestion.module.js';
 import { RecordsController } from './records.controller.js';
 
 @Module({
-  imports: [CanonicalizationModule, ResolutionModule],
+  imports: [RecordIngestionModule],
   controllers: [RecordsController],
-  providers: [RecordIngestionService],
 })
 export class RecordsModule {}

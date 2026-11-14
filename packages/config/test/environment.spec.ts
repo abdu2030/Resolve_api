@@ -23,6 +23,7 @@ describe('validateEnvironment', () => {
   it('returns a typed configuration for complete valid input', () => {
     expect(validateEnvironment(validEnvironment)).toEqual({
       apiPort: 3000,
+      batchQueuePrefix: 'resolve',
       blockingMaxCandidates: 100,
       databaseUrl: validEnvironment.DATABASE_URL,
       nodeEnv: 'development',
@@ -30,6 +31,16 @@ describe('validateEnvironment', () => {
       redisPort: 6379,
       requestBodyLimit: '1mb',
     });
+  });
+
+  it('accepts an isolated queue prefix and rejects Redis key separators', () => {
+    expect(
+      validateEnvironment({ ...validEnvironment, BATCH_QUEUE_PREFIX: 'batch_test-1' })
+        .batchQueuePrefix,
+    ).toBe('batch_test-1');
+    expect(() =>
+      validateEnvironment({ ...validEnvironment, BATCH_QUEUE_PREFIX: 'batch:test' }),
+    ).toThrow('BATCH_QUEUE_PREFIX');
   });
 
   it.each([

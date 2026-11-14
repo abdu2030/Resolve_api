@@ -41,6 +41,18 @@ export class RecordIngestionService {
     rawData: Record<string, unknown>,
     idempotencyKey?: string,
   ): Promise<RecordIngestionExecution> {
+    return this.prisma.$transaction((transaction) =>
+      this.ingestInTransaction(transaction, tenantId, input, rawData, idempotencyKey),
+    );
+  }
+
+  async ingestInTransaction(
+    transaction: Prisma.TransactionClient,
+    tenantId: string,
+    input: Pick<RecordInputDto, 'source' | 'external_id' | 'entity_type'>,
+    rawData: Record<string, unknown>,
+    idempotencyKey?: string,
+  ): Promise<RecordIngestionExecution> {
     const requestHash = hashCanonicalJson({
       source: input.source,
       external_id: input.external_id,
@@ -49,82 +61,80 @@ export class RecordIngestionService {
     });
     const payloadHash = hashCanonicalJson(rawData);
 
-    return this.prisma.$transaction(async (transaction) => {
-      if (idempotencyKey) {
-        await acquireTransactionLock(transaction, `idempotency:${tenantId}:${idempotencyKey}`);
-        const replay = await transaction.idempotencyRequest.findUnique({
-          where: { tenantId_key: { tenantId, key: idempotencyKey } },
-        });
-        if (replay) {
-          if (replay.operation !== OPERATION || replay.requestHash !== requestHash) {
-            throw new ApiException(
-              409,
-              'IDEMPOTENCY_KEY_REUSED',
-              'Idempotency-Key was already used for a different request',
-            );
-          }
-          return {
-            body: replay.responseBody as unknown as RecordIngestionResult,
-            httpStatus: replay.responseStatus,
-            replayed: true,
-          };
-        }
-      }
-
-      await acquireEntityMembershipLock(transaction, tenantId, 'shared');
-      const source = await transaction.sourceSystem.findUnique({
-        where: { tenantId_name: { tenantId, name: input.source } },
+    if (idempotencyKey) {
+      await acquireTransactionLock(transaction, `idempotency:${tenantId}:${idempotencyKey}`);
+      const replay = await transaction.idempotencyRequest.findUnique({
+        where: { tenantId_key: { tenantId, key: idempotencyKey } },
       });
-      if (!source) throw new ApiException(404, 'SOURCE_NOT_FOUND', 'Source does not exist');
-      await acquireTransactionLock(
-        transaction,
-        `record:${tenantId}:${source.id}:${input.external_id}`,
-      );
-      const persistence = await upsertRecord(
-        transaction,
-        tenantId,
-        source.id,
-        input,
-        rawData,
-        payloadHash,
-      );
-      const resolution = await this.resolution.resolve(
-        transaction,
-        tenantId,
-        persistence.body.record_id,
-      );
-      if (
-        resolution.decision === ResolutionDecision.AutoMatch ||
-        resolution.decision === ResolutionDecision.NoMatch
-      ) {
-        await this.canonicalization.canonicalizeLinkedEntity(transaction, {
-          tenantId,
-          entityId: resolution.entity_id,
-          sourceRecordId: persistence.body.record_id,
-          ingestionOperation: persistence.body.operation,
-          resolutionDecision: resolution.decision,
-        });
+      if (replay) {
+        if (replay.operation !== OPERATION || replay.requestHash !== requestHash) {
+          throw new ApiException(
+            409,
+            'IDEMPOTENCY_KEY_REUSED',
+            'Idempotency-Key was already used for a different request',
+          );
+        }
+        return {
+          body: replay.responseBody as unknown as RecordIngestionResult,
+          httpStatus: replay.responseStatus,
+          replayed: true,
+        };
       }
-      const execution: RecordIngestionExecution = {
-        body: { ...persistence.body, ...resolution },
-        httpStatus: persistence.httpStatus,
-        replayed: false,
-      };
+    }
 
-      if (idempotencyKey) {
-        await transaction.idempotencyRequest.create({
-          data: {
-            tenantId,
-            key: idempotencyKey,
-            operation: OPERATION,
-            requestHash,
-            responseStatus: execution.httpStatus,
-            responseBody: execution.body as unknown as Prisma.InputJsonObject,
-          },
-        });
-      }
-      return execution;
+    await acquireEntityMembershipLock(transaction, tenantId, 'shared');
+    const source = await transaction.sourceSystem.findUnique({
+      where: { tenantId_name: { tenantId, name: input.source } },
     });
+    if (!source) throw new ApiException(404, 'SOURCE_NOT_FOUND', 'Source does not exist');
+    await acquireTransactionLock(
+      transaction,
+      `record:${tenantId}:${source.id}:${input.external_id}`,
+    );
+    const persistence = await upsertRecord(
+      transaction,
+      tenantId,
+      source.id,
+      input,
+      rawData,
+      payloadHash,
+    );
+    const resolution = await this.resolution.resolve(
+      transaction,
+      tenantId,
+      persistence.body.record_id,
+    );
+    if (
+      resolution.decision === ResolutionDecision.AutoMatch ||
+      resolution.decision === ResolutionDecision.NoMatch
+    ) {
+      await this.canonicalization.canonicalizeLinkedEntity(transaction, {
+        tenantId,
+        entityId: resolution.entity_id,
+        sourceRecordId: persistence.body.record_id,
+        ingestionOperation: persistence.body.operation,
+        resolutionDecision: resolution.decision,
+      });
+    }
+    const execution: RecordIngestionExecution = {
+      body: { ...persistence.body, ...resolution },
+      httpStatus: persistence.httpStatus,
+      replayed: false,
+    };
+
+    if (idempotencyKey) {
+      await transaction.idempotencyRequest.create({
+        data: {
+          tenantId,
+          key: idempotencyKey,
+          operation: OPERATION,
+          requestHash,
+          responseStatus: execution.httpStatus,
+          responseBody: execution.body as unknown as Prisma.InputJsonObject,
+        },
+      });
+    }
+    return execution;
   }
 }
 
@@ -132,7 +142,7 @@ async function upsertRecord(
   transaction: Prisma.TransactionClient,
   tenantId: string,
   sourceSystemId: string,
-  input: RecordInputDto,
+  input: Pick<RecordInputDto, 'source' | 'external_id' | 'entity_type'>,
   rawData: Record<string, unknown>,
   payloadHash: string,
 ): Promise<RecordPersistenceExecution> {

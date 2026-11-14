@@ -2,6 +2,7 @@ export type NodeEnvironment = 'development' | 'production' | 'test';
 
 export interface EnvironmentConfig {
   apiPort: number;
+  batchQueuePrefix: string;
   blockingMaxCandidates: number;
   databaseUrl: string;
   nodeEnv: NodeEnvironment;
@@ -67,8 +68,14 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     return invalid('REQUEST_BODY_LIMIT');
   }
 
+  const batchQueuePrefix = input.BATCH_QUEUE_PREFIX ?? 'resolve';
+  if (typeof batchQueuePrefix !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(batchQueuePrefix)) {
+    return invalid('BATCH_QUEUE_PREFIX');
+  }
+
   return {
     apiPort: port(input, 'API_PORT'),
+    batchQueuePrefix,
     blockingMaxCandidates: optionalInteger(
       input,
       'BLOCKING_MAX_CANDIDATES',

@@ -11,6 +11,7 @@ module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^@resolve/api/batch-worker$': '<rootDir>/apps/api/src/batch-worker.ts',
     '^@resolve/config$': '<rootDir>/packages/config/src/index.ts',
     '^@resolve/contracts$': '<rootDir>/packages/contracts/src/index.ts',
     '^@resolve/database$': '<rootDir>/packages/database/src/index.ts',
