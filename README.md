@@ -4,6 +4,11 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
+Week 3 Day 5 verifies tenant and scope protections, measures PostgreSQL
+blocking plans as data grows, and measures HTTP and batch throughput with
+synthetic duplicates. See the
+[security and performance baseline](docs/testing/week3-day5-security-performance-powershell.md).
+
 Week 3 Day 4 adds Redis-backed request and batch quotas, structured HTTP logs,
 operator metrics, liveness and readiness probes, and transactional audit events.
 See the [operational hardening testing guide](docs/testing/week3-day4-operational-hardening-powershell.md).

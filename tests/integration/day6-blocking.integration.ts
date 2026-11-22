@@ -360,15 +360,6 @@ describe('Day 6 blocking v1', () => {
       country: 'ET',
     });
     await insertLink(database, tenantA, entityId, supportingId);
-    await seedPlanDistractors(database, tenantA, sourceA, 2000);
-    await database.query('ANALYZE source_records');
-    await database.query('ANALYZE entity_record_links');
-    await database.query('ANALYZE entities');
-
-    await expect(service.findCandidates(tenantA, incomingId)).resolves.toMatchObject({
-      candidates: [{ entityId }],
-    });
-
     const common = {
       schema: schemaName,
       tenantId: tenantA,
@@ -400,17 +391,81 @@ describe('Day 6 blocking v1', () => {
       },
     ];
 
-    for (const { signal, query } of queries) {
-      const nodes = await explainNodes(prisma, query);
-      const indexNames = nodes
-        .map((node) => node['Index Name'])
-        .filter((name): name is string => typeof name === 'string');
-      expect(indexNames).toContain(BLOCKING_QUERY_INDEXES[signal]);
+    const hotEmail = 'shared@blocking.example.test';
+    const hotIncomingId = '00000000-0000-0000-0000-000000000051';
+    await insertRecord(database, {
+      id: hotIncomingId,
+      tenantId: tenantA,
+      sourceSystemId: sourceA,
+      externalId: 'plan-hot-incoming',
+      email: hotEmail,
+    });
+
+    let seeded = 0;
+    const sizes = process.env.RUN_RESOLVE_LOAD === '1' ? [2_000, 20_000] : [2_000];
+    for (const backgroundRecords of sizes) {
+      await seedPlanDistractors(
+        database,
+        tenantA,
+        sourceA,
+        seeded + 1,
+        backgroundRecords,
+        hotEmail,
+      );
+      seeded = backgroundRecords;
+      await database.query('ANALYZE source_records');
+      await database.query('ANALYZE entity_record_links');
+      await database.query('ANALYZE entities');
+      const choices = await service.findCandidates(tenantA, incomingId);
+      expect(choices).toMatchObject({ candidates: [{ entityId }], truncated: false });
+
+      const hotspot = await service.findCandidates(tenantA, hotIncomingId);
+      expect(hotspot.candidates).toHaveLength(2);
+      expect(hotspot.truncated).toBe(true);
       expect(
-        nodes.some(
-          (node) => node['Node Type'] === 'Seq Scan' && node['Relation Name'] === 'source_records',
+        hotspot.candidates.every(
+          ({ matchedOn }) => matchedOn.length === 1 && matchedOn[0] === 'EXACT_EMAIL',
         ),
-      ).toBe(false);
+      ).toBe(true);
+
+      const plans = [];
+      for (const { signal, query } of queries) {
+        const plan = await explain(prisma, query);
+        expect(plan.indexes).toContain(BLOCKING_QUERY_INDEXES[signal]);
+        expect(plan.sequentialSourceScan).toBe(false);
+        expect(plan.returnedRows).toBe(1);
+        plans.push({ signal, ...plan });
+      }
+      const hotPlan = await explain(
+        prisma,
+        exactEmailQuery({
+          ...common,
+          sourceRecordId: hotIncomingId,
+          value: hotEmail,
+        }),
+      );
+      expect(hotPlan.returnedRows).toBe(3);
+      if (process.env.RUN_RESOLVE_LOAD === '1') {
+        const defaultCapPlan = await explain(
+          prisma,
+          exactEmailQuery({
+            ...common,
+            sourceRecordId: hotIncomingId,
+            value: hotEmail,
+            limit: 101,
+          }),
+        );
+        expect(defaultCapPlan.returnedRows).toBe(101);
+        console.info(
+          'Blocking profile ' +
+            JSON.stringify({
+              backgroundRecords,
+              plans,
+              hotspot: { returnedCandidates: hotspot.candidates.length, ...hotPlan },
+              hotspotAtDefaultCap: defaultCapPlan,
+            }),
+        );
+      }
     }
   });
 });
@@ -490,7 +545,9 @@ async function seedPlanDistractors(
   database: Client,
   tenantId: string,
   sourceSystemId: string,
-  count: number,
+  first: number,
+  last: number,
+  hotEmail: string,
 ): Promise<void> {
   await database.query(
     `CREATE TEMP TABLE blocking_plan_seed (
@@ -502,8 +559,8 @@ async function seedPlanDistractors(
   await database.query(
     `INSERT INTO blocking_plan_seed (entity_id, record_id, ordinal)
      SELECT gen_random_uuid(), gen_random_uuid(), value
-     FROM generate_series(1, $1) AS value`,
-    [count],
+     FROM generate_series($1::int, $2::int) AS value`,
+    [first, last],
   );
   await database.query(
     `INSERT INTO entities (id, tenant_id, entity_type)
@@ -522,12 +579,12 @@ async function seedPlanDistractors(
          jsonb_build_object('city', 'city-' || ordinal, 'country', 'ET')
        ),
        'normalization-v1',
-       'Plan-' || ordinal || '@example.test',
+       CASE WHEN ordinal <= 160 THEN $3 ELSE 'Plan-' || ordinal || '@example.test' END,
        '+1999' || lpad(ordinal::text, 8, '0'),
        'plan-' || ordinal || '.example.test',
        'plan person ' || ordinal
      FROM blocking_plan_seed`,
-    [tenantId, sourceSystemId],
+    [tenantId, sourceSystemId, hotEmail],
   );
   await database.query(
     `INSERT INTO entity_record_links
@@ -541,12 +598,19 @@ async function seedPlanDistractors(
 
 type ExplainNode = Record<string, unknown>;
 
-async function explainNodes(
-  prisma: ResolvePrismaClient,
-  query: Prisma.Sql,
-): Promise<ExplainNode[]> {
+interface PlanSummary {
+  indexes: string[];
+  sequentialSourceScan: boolean;
+  milliseconds: number;
+  sharedReads: number;
+  sharedHits: number;
+  returnedRows: number;
+  sourceScanLoops: number;
+}
+
+async function explain(prisma: ResolvePrismaClient, query: Prisma.Sql): Promise<PlanSummary> {
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>(
-    Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`,
+    Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query}`,
   );
   const document = rows[0]?.['QUERY PLAN'];
   if (!Array.isArray(document) || document.length === 0) {
@@ -556,7 +620,25 @@ async function explainNodes(
   if (typeof root !== 'object' || root === null || Array.isArray(root)) {
     throw new Error('PostgreSQL query plan root is invalid');
   }
-  return collectPlanNodes((root as ExplainNode).Plan);
+  const report = root as ExplainNode;
+  const nodes = collectPlanNodes(report.Plan);
+  const first = nodes[0];
+  if (!first) throw new Error('PostgreSQL query plan is empty');
+  return {
+    indexes: nodes.flatMap((node) =>
+      typeof node['Index Name'] === 'string' ? [node['Index Name']] : [],
+    ),
+    sequentialSourceScan: nodes.some(
+      (node) => node['Relation Name'] === 'source_records' && node['Node Type'] === 'Seq Scan',
+    ),
+    milliseconds: Number(report['Execution Time']),
+    sharedReads: Number(first['Shared Read Blocks']),
+    sharedHits: Number(first['Shared Hit Blocks']),
+    returnedRows: Number(first['Actual Rows']),
+    sourceScanLoops: nodes
+      .filter((node) => node['Relation Name'] === 'source_records')
+      .reduce((total, node) => total + Number(node['Actual Loops']), 0),
+  };
 }
 
 function collectPlanNodes(value: unknown): ExplainNode[] {
