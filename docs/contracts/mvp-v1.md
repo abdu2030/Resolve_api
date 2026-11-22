@@ -2,6 +2,70 @@
 
 Resolve supports `person` and `company` records. External JSON uses snake_case.
 
+## Webhook registration and delivery (Week 3 Day 3)
+
+All webhook management routes require `webhooks:manage`. New bootstrap keys
+include this scope by default. The API derives tenant identity from the key.
+
+| Method and path                                                         | Result                                                                |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `POST /v1/webhook-endpoints`                                            | `201` with `endpoint_id`, canonical `url`, `events`, and `created_at` |
+| `GET /v1/webhook-endpoints/{endpointId}/deliveries?cursor={deliveryId}` | Up to 25 deliveries, newest first, with `next_cursor` when more exist |
+| `GET /v1/webhook-endpoints/{endpointId}/deliveries/{eventId}`           | Delivery status and the latest 50 attempts                            |
+| `POST /v1/webhook-endpoints/{endpointId}/deliveries/{eventId}/replay`   | `202` with the same `event_id` and `delivery_id` and status `PENDING` |
+
+Register with an object containing `url`, a nonempty list of unique `events`, and
+a randomly generated 32-byte `signing_secret` encoded as 64 hexadecimal
+characters. Keep that secret in your receiver's secret store. Resolve encrypts
+it at rest using `WEBHOOK_ENCRYPTION_KEY` and omits it from every response.
+Configure the same encryption key for the API and worker.
+
+The URL must point to a public HTTPS hostname. Credentials, fragments, IP
+literals and non-public DNS answers cause `422 UNSAFE_WEBHOOK_URL`. A
+temporary DNS failure returns `503 WEBHOOK_DNS_UNAVAILABLE`. The delivery
+worker validates DNS again, connects to a validated IP with standard TLS
+hostname verification, and treats redirects as terminal failures.
+A tenant may register up to 25 destinations. Re-registering a URL returns
+`409 WEBHOOK_ENDPOINT_EXISTS` with the existing `error.details.endpoint_id`.
+
+| Event                                                    | `data` fields                                                           |
+| -------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `record.resolved`                                        | `record_id`, `entity_id`, `decision`, `version`                         |
+| `review.resolved`                                        | `review_id`, `review_decision_id`, `record_id`, `entity_id`, `decision` |
+| `entity.merged`, `entity.split`, `entity.merge_reversed` | `operation_id`, `source_entity_id`, `target_entity_id`                  |
+| `job.completed`                                          | `job_id`, `status` (`SUCCEEDED` or `FAILED`)                            |
+
+The worker sends a JSON POST with top-level `event_id`, `type`, `occurred_at`
+(UTC), and `data`. `record.resolved` covers created and revised source record
+versions from both ingestion paths. On a `REVIEW` decision its `entity_id` is
+the proposed entity. Keyed replays and unchanged records do not create new
+events. Configure subscriptions before producing events. Only events with at
+least one subscriber are stored.
+
+`Resolve-Timestamp` contains Unix seconds at delivery time.
+`Resolve-Signature` contains `v1=` followed by lowercase hexadecimal
+HMAC-SHA256 over the timestamp in ASCII, a literal period, then the exact
+request body bytes. Decode the registered signing secret from hex before
+using it as the HMAC key. Verify the signature with a constant-time comparison
+against the raw body. Apply a freshness window appropriate for receiver clock
+skew. Deduplicate by `event_id` before applying side effects.
+
+A `2xx` response acknowledges delivery. Transport errors, `408`, `429`,
+and `5xx` retry with exponential backoff and jitter, with at most five
+attempts per delivery cycle by default. `WEBHOOK_MAX_ATTEMPTS` adjusts the retry
+budget, and `WEBHOOK_RETRY_BASE_MS` sets the initial delay. Other responses
+cause `DEAD_LETTER`. Each
+attempt has its own outcome, including `INTERRUPTED` after an expired worker
+lease. A receiver can see an event more than once, including after accepting
+it immediately before a worker interruption. No ordering is guaranteed.
+
+Replay requires an `Idempotency-Key`. It accepts `DELIVERED` and
+`DEAD_LETTER` deliveries and starts a fresh retry cycle while retaining
+attempt history. Reusing the same key for the same event returns the recorded
+response and `Idempotency-Replayed: true`. A fresh key while delivery is
+active returns `409 WEBHOOK_DELIVERY_ACTIVE`. A different tenant receives
+`404` for endpoint or delivery reads and replay.
+
 ## Asynchronous batch resolution (Week 3 Day 1)
 
 `POST /v1/records/batch` requires `records:write` and an `Idempotency-Key`.
@@ -128,7 +192,7 @@ only from the authenticated key. `POST /v1/sources` requires `sources:write`,
 `POST /v1/records` requires `records:write`, and all entity reads require
 `entities:read`. Merge requires `entities:merge`; both split modes require
 `entities:split`. Review reads require `reviews:read`; decisions require
-`reviews:write`. Job polling requires `jobs:read`. Bootstrap keys include all eight scopes by default. Existing
+`reviews:write`. Job polling requires `jobs:read`. Webhook management requires `webhooks:manage`. Bootstrap keys include all supported scopes by default. Existing
 keys keep their stored scopes.
 
 `POST /v1/sources` accepts:

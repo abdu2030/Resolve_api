@@ -1,5 +1,22 @@
 # Resolve API Architecture
 
+## Webhook delivery
+
+The API persists a webhook event and its subscribed deliveries in the same
+PostgreSQL transaction as the source record resolution, entity operation,
+review decision, or terminal batch result. Compound tenant foreign keys
+constrain endpoint, event, delivery, and attempt linkage. Events carry
+identifiers and outcome metadata. Source payloads and explanations stay in
+their existing authenticated read paths.
+
+The worker scans due deliveries in bounded sets and dispatches keyed BullMQ
+work. PostgreSQL owns retry timing, bounded attempt counts, and dead-letter
+status. The worker commits the start of an attempt before sending and commits
+its result afterward. An expired lease lets the next attempt mark the old
+one interrupted. Its attempt number prevents a stale worker from overwriting
+the newer delivery state. Replay resets the retry budget while preserving
+the event and earlier attempts.
+
 ## Batch resolution
 
 PostgreSQL commits the job, ordered inputs, and idempotency response in one

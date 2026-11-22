@@ -4,6 +4,10 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
+Week 3 Day 3 adds tenant-scoped webhook registration, signed HTTPS delivery,
+durable retries and attempt history, and replay. See the
+[webhook testing guide](docs/testing/week3-day3-webhooks-powershell.md).
+
 Week 3 Day 2 checks concurrent batch submissions, shared record locks,
 worker crash recovery, and overlapping merges against PostgreSQL and Redis.
 See the [concurrency testing guide](docs/testing/week3-day2-concurrency-powershell.md).
@@ -74,6 +78,9 @@ npm run test -- packages/matching/test
 | `API_PORT`                | Host port used by the API                              | `3000`                              |
 | `BLOCKING_MAX_CANDIDATES` | Final candidate cap; integer from 1 through 1000       | `100`                               |
 | `BATCH_QUEUE_PREFIX`      | Redis queue namespace for the worker                   | `resolve`                           |
+| `WEBHOOK_ENCRYPTION_KEY`  | Optional 32-byte hex key for webhook secrets           | Generated locally                   |
+| `WEBHOOK_MAX_ATTEMPTS`    | Maximum attempts per webhook delivery cycle            | `5`                                 |
+| `WEBHOOK_RETRY_BASE_MS`   | Initial delay for webhook backoff, in milliseconds     | `1000`                              |
 | `DATABASE_URL`            | PostgreSQL connection string used by Prisma            | Local Compose URL in `.env.example` |
 | `TEST_DATABASE_URL`       | Optional URL used by database integration tests        | `DATABASE_URL`, then local Compose  |
 | `REDIS_HOST`              | Redis hostname                                         | `localhost`                         |
@@ -83,7 +90,7 @@ npm run test -- packages/matching/test
 | `POSTGRES_USER`           | Compose PostgreSQL user                                | `resolve`                           |
 | `POSTGRES_PASSWORD`       | Compose PostgreSQL password for local development only | `resolve`                           |
 
-The application validates required runtime variables and the optional candidate limit at startup. Validation reports only the invalid variable name, never its value.
+The application validates runtime variables at startup. Validation reports only the invalid variable name, never its value. Configure the same `WEBHOOK_ENCRYPTION_KEY` for the API and worker to enable webhooks.
 
 ## Prerequisites
 
@@ -130,7 +137,7 @@ Apply the migrations, then run the bootstrap command:
 npm run auth:bootstrap -- --tenant-name "Local Demo" --environment test
 ```
 
-The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears. PostgreSQL stores its SHA-256 hash. The default key has `sources:write`, `records:write`, `jobs:read`, `entities:read`, `entities:merge`, `entities:split`, `reviews:read`, and `reviews:write` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name. Existing keys keep their original scopes. Each bootstrap invocation creates a new tenant and key.
+The command prints the tenant ID, API-key ID, and plaintext key. Copy the plaintext key when it appears. PostgreSQL stores its SHA-256 hash. The default key has `sources:write`, `records:write`, `jobs:read`, `entities:read`, `entities:merge`, `entities:split`, `reviews:read`, `reviews:write`, and `webhooks:manage` scopes. Use `--scopes records:write` or `--key-name "Importer"` when you need a narrower key or a descriptive name. Existing keys keep their original scopes. Each bootstrap invocation creates a new tenant and key.
 
 ## Manual canonicalization validation in PowerShell
 
