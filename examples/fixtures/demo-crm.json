@@ -1,0 +1,17 @@
+{
+  "source": { "name": "mvp-demo-crm", "type": "api", "priority": 10 },
+  "records": {
+    "contact": {
+      "entity_type": "person",
+      "data": { "name": "Ada Marin", "email": "ada-{run}@example.test" }
+    },
+    "distinctContact": {
+      "entity_type": "person",
+      "data": { "name": "Maya Flores", "email": "maya-{run}@example.test" }
+    },
+    "company": {
+      "entity_type": "company",
+      "data": { "name": "Rift Valley Logistics", "domain": "riftlogistics-{run}.example.test" }
+    }
+  }
+}

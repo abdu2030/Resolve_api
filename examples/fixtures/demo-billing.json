@@ -1,0 +1,21 @@
+{
+  "source": { "name": "mvp-demo-billing", "type": "api", "priority": 100 },
+  "records": {
+    "contact": {
+      "entity_type": "person",
+      "data": { "name": "ADA MARIN", "email": "ada-{run}@EXAMPLE.TEST" }
+    },
+    "company": {
+      "entity_type": "company",
+      "data": { "name": "Rift Transport Group", "domain": "riftlogistics-{run}.example.test" }
+    },
+    "batchDuplicate": {
+      "entity_type": "person",
+      "data": { "name": "Ada Marin", "email": "ada-{run}@example.test" }
+    },
+    "batchNewContact": {
+      "entity_type": "person",
+      "data": { "name": "Noah Chen", "email": "noah-{run}@example.test" }
+    }
+  }
+}
