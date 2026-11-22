@@ -92,6 +92,19 @@ enum JobStatus {
   @@map("job_status")
 }
 
+enum AuditAction {
+  API_KEY_BOOTSTRAPPED        @map("api_key.bootstrapped")
+  SOURCE_REGISTERED           @map("source.registered")
+  REVIEW_RESOLVED             @map("review.resolved")
+  ENTITY_MERGED               @map("entity.merged")
+  ENTITY_SPLIT                @map("entity.split")
+  ENTITY_MERGE_REVERSED       @map("entity.merge_reversed")
+  WEBHOOK_ENDPOINT_REGISTERED @map("webhook_endpoint.registered")
+  WEBHOOK_DELIVERY_REPLAYED   @map("webhook_delivery.replayed")
+
+  @@map("audit_action")
+}
+
 model Tenant {
   id                   String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                 String                   @db.VarChar(120)
@@ -116,6 +129,7 @@ model Tenant {
   jobs                 Job[]
   webhookEndpoints     WebhookEndpoint[]
   webhookEvents        WebhookEvent[]
+  auditEvents          AuditEvent[]
 
   @@map("tenants")
 }
@@ -133,11 +147,27 @@ model ApiKey {
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "api_keys_tenant_fkey")
   entityOperations EntityOperation[]
   reviewDecisions  ReviewDecision[]
+  auditEvents      AuditEvent[]
 
   @@unique([tenantId, id], map: "api_keys_tenant_id_key")
   @@index([tenantId, revokedAt], map: "api_keys_tenant_revoked_idx")
   @@index([prefix], map: "api_keys_prefix_idx")
   @@map("api_keys")
+}
+
+model AuditEvent {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  actorApiKeyId String?     @map("actor_api_key_id") @db.Uuid
+  action        AuditAction
+  resourceId    String      @map("resource_id") @db.Uuid
+  data          Json        @default("{}")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "audit_events_tenant_fkey")
+  actor         ApiKey?     @relation(fields: [tenantId, actorApiKeyId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "audit_events_tenant_actor_fkey")
+
+  @@index([tenantId, createdAt(sort: Desc), id(sort: Desc)], map: "audit_events_tenant_created_idx")
+  @@map("audit_events")
 }
 
 model SourceSystem {

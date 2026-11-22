@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { API_SCOPES, type ApiScope } from '@resolve/contracts';
 import { createPrismaClient } from '@resolve/database';
 
+import { appendAuditEvent } from '../audit/audit-events.js';
 import { generateApiKey, type ApiKeyEnvironment } from './api-key.js';
 
 interface BootstrapArguments {
@@ -66,6 +67,11 @@ async function main(): Promise<void> {
           keyHash: generated.hash,
           scopes: options.scopes,
         },
+      });
+      await appendAuditEvent(transaction, {
+        tenantId: tenant.id,
+        action: 'API_KEY_BOOTSTRAPPED',
+        resourceId: apiKey.id,
       });
       return { apiKeyId: apiKey.id, tenantId: tenant.id };
     });

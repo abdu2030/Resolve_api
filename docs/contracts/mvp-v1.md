@@ -2,6 +2,44 @@
 
 Resolve supports `person` and `company` records. External JSON uses snake_case.
 
+## Operational controls (Week 3 Day 4)
+
+Authenticated, authorized API requests share an API-key budget and a tenant
+budget. Batch submissions also use separate API-key and tenant batch budgets.
+The API admits a request only when all applicable budgets have capacity.
+Admitted requests count before endpoint validation or idempotency handling.
+Requests denied by the limiter do not consume additional slots.
+
+A budget starts its fixed window when the first request uses it. The default
+window is 60 seconds. Default general budgets are 600 requests per key and
+3,000 per tenant. Default batch budgets are 20 submissions per key and 100
+per tenant per window. `RATE_LIMIT_WINDOW_SECONDS` and the four `RATE_LIMIT_*_MAX`
+environment variables configure these settings.
+
+Exhausted budgets return `429 RATE_LIMIT_EXCEEDED` with a `Retry-After`
+header containing the number of seconds until all exhausted budgets have
+capacity. Redis unavailability returns `503 RATE_LIMIT_UNAVAILABLE`. If a
+connection drops after Redis accepts the quota update, that update may still
+count. The Redis client does not replay it after reconnecting.
+Missing credentials or scopes retain their existing `401` or `403` responses.
+
+The unversioned health endpoints are public and exempt from request quotas.
+`GET /health/live` checks the API process. `GET /health` and
+`GET /health/ready` report PostgreSQL and Redis readiness and return
+`503` with the readiness response when a dependency is down.
+
+`GET /metrics` exposes process-local HTTP counters and latency buckets in
+Prometheus text format. It uses `Authorization: Bearer <METRICS_TOKEN>` with
+a separate operator token. The API returns `404` while the endpoint is
+disabled and `401` for missing or invalid operator credentials when enabled.
+API requests carry a generated `X-Request-Id` response header for log
+correlation.
+
+JSON bodies that exceed `REQUEST_BODY_LIMIT` return `413 PAYLOAD_TOO_LARGE`.
+Malformed JSON returns `400 BAD_REQUEST`. Unsupported JSON encodings or
+charsets return `415 UNSUPPORTED_MEDIA_TYPE`. These responses use the usual
+`error.code` and `error.message` fields.
+
 ## Webhook registration and delivery (Week 3 Day 3)
 
 All webhook management routes require `webhooks:manage`. New bootstrap keys

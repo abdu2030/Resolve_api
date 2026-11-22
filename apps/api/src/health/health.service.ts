@@ -8,7 +8,10 @@ import {
   type DependencyStatus,
   type HealthIndicator,
   type HealthResponse,
+  type LivenessResponse,
 } from './health.types.js';
+
+const PROBE_TIMEOUT_MS = 1_000;
 
 @Injectable()
 export class HealthService {
@@ -18,6 +21,14 @@ export class HealthService {
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
+  live(): LivenessResponse {
+    return {
+      service: 'resolve-api',
+      status: 'ok',
+      timestamp: this.clock.now().toISOString(),
+    };
+  }
+
   async check(): Promise<HealthResponse> {
     const [database, redis] = await Promise.all([
       this.checkDependency(this.database),
@@ -26,18 +37,24 @@ export class HealthService {
 
     return {
       checks: { database, redis },
-      service: 'resolve-api',
+      ...this.live(),
       status: database === 'up' && redis === 'up' ? 'ok' : 'error',
-      timestamp: this.clock.now().toISOString(),
     };
   }
 
   private async checkDependency(indicator: HealthIndicator): Promise<DependencyStatus> {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      await indicator.check();
-      return 'up';
+      return await Promise.race([
+        indicator.check().then(() => 'up' as const),
+        new Promise<DependencyStatus>((resolve) => {
+          timeout = setTimeout(() => resolve('down'), PROBE_TIMEOUT_MS);
+        }),
+      ]);
     } catch {
       return 'down';
+    } finally {
+      clearTimeout(timeout);
     }
   }
 }

@@ -5,7 +5,13 @@ export interface EnvironmentConfig {
   batchQueuePrefix: string;
   blockingMaxCandidates: number;
   databaseUrl: string;
+  metricsToken?: string;
   nodeEnv: NodeEnvironment;
+  rateLimitBatchKeyMax: number;
+  rateLimitBatchTenantMax: number;
+  rateLimitKeyMax: number;
+  rateLimitTenantMax: number;
+  rateLimitWindowSeconds: number;
   redisHost: string;
   redisPort: number;
   requestBodyLimit: string;
@@ -60,6 +66,13 @@ function optionalInteger(
   return parsed;
 }
 
+function optionalHexSecret(input: Record<string, unknown>, key: string): string | undefined {
+  const value = input[key];
+  if (value === undefined || value === '') return undefined;
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/i.test(value)) return invalid(key);
+  return value;
+}
+
 export function validateEnvironment(input: Record<string, unknown>): EnvironmentConfig {
   const nodeEnv = requiredString(input, 'NODE_ENV');
   if (!SUPPORTED_ENVIRONMENTS.has(nodeEnv as NodeEnvironment)) {
@@ -76,12 +89,8 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     return invalid('BATCH_QUEUE_PREFIX');
   }
 
-  const webhookEncryptionKey = input.WEBHOOK_ENCRYPTION_KEY;
-  if (webhookEncryptionKey !== undefined && webhookEncryptionKey !== '') {
-    if (typeof webhookEncryptionKey !== 'string' || !/^[a-f0-9]{64}$/i.test(webhookEncryptionKey)) {
-      return invalid('WEBHOOK_ENCRYPTION_KEY');
-    }
-  }
+  const metricsToken = optionalHexSecret(input, 'METRICS_TOKEN');
+  const webhookEncryptionKey = optionalHexSecret(input, 'WEBHOOK_ENCRYPTION_KEY');
 
   return {
     apiPort: port(input, 'API_PORT'),
@@ -93,7 +102,13 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
       MAX_BLOCKING_CANDIDATES,
     ),
     databaseUrl: requiredString(input, 'DATABASE_URL'),
+    ...(metricsToken ? { metricsToken } : {}),
     nodeEnv: nodeEnv as NodeEnvironment,
+    rateLimitBatchKeyMax: optionalInteger(input, 'RATE_LIMIT_BATCH_KEY_MAX', 20, 100_000),
+    rateLimitBatchTenantMax: optionalInteger(input, 'RATE_LIMIT_BATCH_TENANT_MAX', 100, 100_000),
+    rateLimitKeyMax: optionalInteger(input, 'RATE_LIMIT_KEY_MAX', 600, 100_000),
+    rateLimitTenantMax: optionalInteger(input, 'RATE_LIMIT_TENANT_MAX', 3000, 100_000),
+    rateLimitWindowSeconds: optionalInteger(input, 'RATE_LIMIT_WINDOW_SECONDS', 60, 3600),
     redisHost: requiredString(input, 'REDIS_HOST'),
     redisPort: port(input, 'REDIS_PORT'),
     requestBodyLimit,

@@ -4,6 +4,10 @@ Resolve links imperfect Person and Company records to stable canonical entities.
 
 ## Current milestone
 
+Week 3 Day 4 adds Redis-backed request and batch quotas, structured HTTP logs,
+operator metrics, liveness and readiness probes, and transactional audit events.
+See the [operational hardening testing guide](docs/testing/week3-day4-operational-hardening-powershell.md).
+
 Week 3 Day 3 adds tenant-scoped webhook registration, signed HTTPS delivery,
 durable retries and attempt history, and replay. See the
 [webhook testing guide](docs/testing/week3-day3-webhooks-powershell.md).
@@ -77,7 +81,7 @@ npm run test -- packages/matching/test
 | `NODE_ENV`                | Runtime mode: `development`, `test`, or `production`   | `development`                       |
 | `API_PORT`                | Host port used by the API                              | `3000`                              |
 | `BLOCKING_MAX_CANDIDATES` | Final candidate cap; integer from 1 through 1000       | `100`                               |
-| `BATCH_QUEUE_PREFIX`      | Redis queue namespace for the worker                   | `resolve`                           |
+| `BATCH_QUEUE_PREFIX`      | Redis namespace for queues and API rate limits         | `resolve`                           |
 | `WEBHOOK_ENCRYPTION_KEY`  | Optional 32-byte hex key for webhook secrets           | Generated locally                   |
 | `WEBHOOK_MAX_ATTEMPTS`    | Maximum attempts per webhook delivery cycle            | `5`                                 |
 | `WEBHOOK_RETRY_BASE_MS`   | Initial delay for webhook backoff, in milliseconds     | `1000`                              |
@@ -91,6 +95,15 @@ npm run test -- packages/matching/test
 | `POSTGRES_PASSWORD`       | Compose PostgreSQL password for local development only | `resolve`                           |
 
 The application validates runtime variables at startup. Validation reports only the invalid variable name, never its value. Configure the same `WEBHOOK_ENCRYPTION_KEY` for the API and worker to enable webhooks.
+
+| Operational variable          | Default | Purpose                                                  |
+| ----------------------------- | ------- | -------------------------------------------------------- |
+| `RATE_LIMIT_WINDOW_SECONDS`   | `60`    | Window for general and batch quotas, in seconds          |
+| `RATE_LIMIT_KEY_MAX`          | `600`   | Requests per API key per window                          |
+| `RATE_LIMIT_TENANT_MAX`       | `3000`  | Requests per tenant per window                           |
+| `RATE_LIMIT_BATCH_KEY_MAX`    | `20`    | Batch submissions per API key per window                 |
+| `RATE_LIMIT_BATCH_TENANT_MAX` | `100`   | Batch submissions per tenant per window                  |
+| `METRICS_TOKEN`               | Unset   | 32-byte hex token for the optional HTTP metrics endpoint |
 
 ## Prerequisites
 

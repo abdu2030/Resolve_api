@@ -12,6 +12,12 @@ export interface HealthIndicator {
 
 export type DependencyStatus = 'down' | 'up';
 
+export interface LivenessResponse {
+  service: 'resolve-api';
+  status: 'ok';
+  timestamp: string;
+}
+
 export interface HealthResponse {
   checks: {
     database: DependencyStatus;

@@ -1,24 +1,25 @@
-import {
-  ArgumentsHost,
-  Catch,
-  HttpException,
-  HttpStatus,
-  type ExceptionFilter,
-} from '@nestjs/common';
+import { ArgumentsHost, Catch, HttpException, type ExceptionFilter } from '@nestjs/common';
 import type { Response } from 'express';
 
-import type { ApiErrorBody } from './api-exception.js';
+import { ApiException, type ApiErrorBody } from './api-exception.js';
 
-const STATUS_CODES: Record<number, string> = {
-  400: 'BAD_REQUEST',
-  401: 'UNAUTHORIZED',
-  403: 'FORBIDDEN',
-  404: 'NOT_FOUND',
-  409: 'CONFLICT',
-  413: 'PAYLOAD_TOO_LARGE',
-  422: 'UNPROCESSABLE_ENTITY',
-  429: 'TOO_MANY_REQUESTS',
-  503: 'SERVICE_UNAVAILABLE',
+const INTERNAL_ERROR = { code: 'INTERNAL_ERROR', message: 'Internal server error' };
+const STATUS_ERRORS: Record<number, ApiErrorBody['error']> = {
+  400: { code: 'BAD_REQUEST', message: 'Request validation failed' },
+  401: { code: 'UNAUTHORIZED', message: 'Unauthorized' },
+  403: { code: 'FORBIDDEN', message: 'Forbidden' },
+  404: { code: 'NOT_FOUND', message: 'Resource not found' },
+  405: { code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' },
+  408: { code: 'REQUEST_TIMEOUT', message: 'Request timed out' },
+  409: { code: 'CONFLICT', message: 'Conflict' },
+  413: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body exceeds the size limit' },
+  415: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Unsupported request body format' },
+  422: { code: 'UNPROCESSABLE_ENTITY', message: 'Unprocessable entity' },
+  429: { code: 'TOO_MANY_REQUESTS', message: 'Too many requests' },
+  500: INTERNAL_ERROR,
+  502: { code: 'BAD_GATEWAY', message: 'Bad gateway' },
+  503: { code: 'SERVICE_UNAVAILABLE', message: 'Service unavailable' },
+  504: { code: 'GATEWAY_TIMEOUT', message: 'Gateway timed out' },
 };
 
 @Catch()
@@ -28,41 +29,24 @@ export class ApiExceptionFilter implements ExceptionFilter {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const payload = exception.getResponse();
-      if (isApiErrorBody(payload)) {
+      if (exception instanceof ApiException) {
         response.status(status).json(payload);
         return;
       }
       const details =
-        typeof payload === 'object' && payload !== null && 'message' in payload
-          ? { messages: Array.isArray(payload.message) ? payload.message : [payload.message] }
+        status === 400 &&
+        typeof payload === 'object' &&
+        payload !== null &&
+        'message' in payload &&
+        Array.isArray(payload.message)
+          ? { messages: payload.message }
           : undefined;
+      const error = STATUS_ERRORS[status] ?? { code: 'HTTP_ERROR', message: 'Request failed' };
       response.status(status).json({
-        error: {
-          code: STATUS_CODES[status] ?? 'HTTP_ERROR',
-          message:
-            status === Number(HttpStatus.BAD_REQUEST)
-              ? 'Request validation failed'
-              : exception.message,
-          ...(details ? { details } : {}),
-        },
+        error: { ...error, ...(details ? { details } : {}) },
       });
       return;
     }
-    response
-      .status(500)
-      .json({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } });
+    response.status(500).json({ error: INTERNAL_ERROR });
   }
-}
-
-function isApiErrorBody(value: unknown): value is ApiErrorBody {
-  if (typeof value !== 'object' || value === null || !('error' in value)) return false;
-  const error = value.error;
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    typeof error.code === 'string' &&
-    'message' in error &&
-    typeof error.message === 'string'
-  );
 }

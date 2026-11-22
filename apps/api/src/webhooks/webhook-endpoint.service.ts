@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ResolvePrismaClient } from '@resolve/database';
 
+import { appendAuditEvent } from '../audit/audit-events.js';
+import type { AuthPrincipal } from '../auth/auth-principal.js';
 import { acquireTransactionLock } from '../common/database/advisory-lock.js';
 import { ApiException } from '../common/http/api-exception.js';
 import { hashCanonicalJson } from '../common/json/canonical-json.js';
@@ -29,7 +31,11 @@ export class WebhookEndpointService {
     private readonly secrets: WebhookSecretService,
   ) {}
 
-  async register(tenantId: string, input: RegisterWebhookEndpointDto): Promise<WebhookEndpointDto> {
+  async register(
+    principal: AuthPrincipal,
+    input: RegisterWebhookEndpointDto,
+  ): Promise<WebhookEndpointDto> {
+    const { tenantId, apiKeyId } = principal;
     if (!this.secrets.enabled) {
       throw new ApiException(503, 'WEBHOOKS_UNAVAILABLE', 'Webhook signing is unavailable');
     }
@@ -74,6 +80,12 @@ export class WebhookEndpointService {
       const endpoint = await transaction.webhookEndpoint.create({
         data: { id, tenantId, url, events: input.events, encryptedSecret },
         select: { id: true, url: true, events: true, createdAt: true },
+      });
+      await appendAuditEvent(transaction, {
+        tenantId,
+        actorApiKeyId: apiKeyId,
+        action: 'WEBHOOK_ENDPOINT_REGISTERED',
+        resourceId: endpoint.id,
       });
       return {
         endpoint_id: endpoint.id,
@@ -148,11 +160,12 @@ export class WebhookEndpointService {
   }
 
   replay(
-    tenantId: string,
+    principal: AuthPrincipal,
     endpointId: string,
     eventId: string,
     key: string,
   ): Promise<{ body: WebhookReplayDto; replayed: boolean }> {
+    const { tenantId, apiKeyId } = principal;
     const operation = 'POST /v1/webhook-endpoints/:endpointId/deliveries/:eventId/replay';
     const requestHash = hashCanonicalJson({ endpointId, eventId });
     return this.prisma.$transaction(async (transaction) => {
@@ -172,7 +185,7 @@ export class WebhookEndpointService {
       }
       const delivery = await transaction.webhookDelivery.findUnique({
         where: { tenantId_endpointId_eventId: { tenantId, endpointId, eventId } },
-        select: { id: true, attempts: true },
+        select: { id: true, attempts: true, endpointId: true, eventId: true },
       });
       if (!delivery) throw deliveryNotFound();
       const queued = await transaction.webhookDelivery.updateMany({
@@ -211,6 +224,13 @@ export class WebhookEndpointService {
           responseStatus: 202,
           responseBody: { ...body },
         },
+      });
+      await appendAuditEvent(transaction, {
+        tenantId,
+        actorApiKeyId: apiKeyId,
+        action: 'WEBHOOK_DELIVERY_REPLAYED',
+        resourceId: delivery.id,
+        data: { endpoint_id: delivery.endpointId, event_id: delivery.eventId },
       });
       return { body, replayed: false };
     });

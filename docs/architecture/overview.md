@@ -1,5 +1,27 @@
 # Resolve API Architecture
 
+## Operational hardening
+
+The HTTP rate-limit guard runs after API-key and scope checks. One Redis
+operation checks and updates every applicable budget atomically. Counters
+expire and share a tenant hash tag. API instances in the same deployment
+use the same Redis namespace. Admission fails with a stable service error
+while Redis cannot check a budget.
+
+API request logging records a generated request ID, method, matched route
+template, status, and duration. The operator metrics endpoint exposes
+process-local HTTP counters and latency buckets with bounded method and
+status labels. Scrape each API replica to aggregate a deployment. The
+liveness probe runs without dependency checks. Readiness bounds its
+PostgreSQL and Redis probes.
+
+Sensitive admin mutations write tenant-scoped audit events in the same
+transaction as their substantive effects. Event rows carry an action,
+resource identifier, and authenticated actor when applicable. PostgreSQL
+rejects updates, deletions, and truncation of the audit table. Entity and
+review history retains full domain evidence. A replayed request returns the
+existing result and leaves the original audit event in place.
+
 ## Webhook delivery
 
 The API persists a webhook event and its subscribed deliveries in the same

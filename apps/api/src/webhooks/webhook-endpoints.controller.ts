@@ -64,7 +64,7 @@ export class WebhookEndpointsController {
     @Req() request: AuthenticatedRequest,
     @Body() input: RegisterWebhookEndpointDto,
   ): Promise<WebhookEndpointDto> {
-    return this.endpoints.register(request.principal!.tenantId, input);
+    return this.endpoints.register(request.principal!, input);
   }
 
   @Get(':endpointId/deliveries')
@@ -105,12 +105,7 @@ export class WebhookEndpointsController {
     const key = validateIdempotencyKey(header);
     if (!key)
       throw new ApiException(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency-Key is required');
-    const result = await this.endpoints.replay(
-      request.principal!.tenantId,
-      endpointId,
-      eventId,
-      key,
-    );
+    const result = await this.endpoints.replay(request.principal!, endpointId, eventId, key);
     if (result.replayed) response.setHeader('Idempotency-Replayed', 'true');
     return result.body;
   }

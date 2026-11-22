@@ -42,7 +42,14 @@ services:
         condition: service_healthy
     environment:
       API_PORT: 3000
+      BATCH_QUEUE_PREFIX: ${BATCH_QUEUE_PREFIX:-resolve}
       BLOCKING_MAX_CANDIDATES: ${BLOCKING_MAX_CANDIDATES:-100}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      RATE_LIMIT_KEY_MAX: ${RATE_LIMIT_KEY_MAX:-600}
+      RATE_LIMIT_TENANT_MAX: ${RATE_LIMIT_TENANT_MAX:-3000}
+      RATE_LIMIT_BATCH_KEY_MAX: ${RATE_LIMIT_BATCH_KEY_MAX:-20}
+      RATE_LIMIT_BATCH_TENANT_MAX: ${RATE_LIMIT_BATCH_TENANT_MAX:-100}
       DATABASE_URL: postgresql://${POSTGRES_USER:-resolve}:${POSTGRES_PASSWORD:-resolve}@postgres:5432/${POSTGRES_DB:-resolve}?schema=public
       NODE_ENV: production
       REDIS_HOST: redis
@@ -55,7 +62,7 @@ services:
           'CMD',
           'node',
           '-e',
-          "fetch('http://localhost:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+          "fetch('http://localhost:3000/health/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
         ]
       interval: 5s
       timeout: 5s

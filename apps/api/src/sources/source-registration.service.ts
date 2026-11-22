@@ -2,6 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { CreateSourceDto } from '@resolve/contracts';
 import type { ResolvePrismaClient } from '@resolve/database';
 
+import { appendAuditEvent } from '../audit/audit-events.js';
+import type { AuthPrincipal } from '../auth/auth-principal.js';
 import { acquireTransactionLock } from '../common/database/advisory-lock.js';
 import { ApiException } from '../common/http/api-exception.js';
 import { PRISMA_CLIENT } from '../infrastructure/infrastructure.tokens.js';
@@ -11,7 +13,8 @@ import type { SourceRegistrationResult, SourceResponseDto } from './source-respo
 export class SourceRegistrationService {
   constructor(@Inject(PRISMA_CLIENT) private readonly prisma: ResolvePrismaClient) {}
 
-  register(tenantId: string, input: CreateSourceDto): Promise<SourceRegistrationResult> {
+  register(principal: AuthPrincipal, input: CreateSourceDto): Promise<SourceRegistrationResult> {
+    const { tenantId, apiKeyId } = principal;
     return this.prisma.$transaction(async (transaction) => {
       const priority = input.priority ?? 100;
       await acquireTransactionLock(transaction, `source:${tenantId}:${input.name}`);
@@ -37,6 +40,12 @@ export class SourceRegistrationService {
       }
       const created = await transaction.sourceSystem.create({
         data: { tenantId, name: input.name, type: input.type, priority },
+      });
+      await appendAuditEvent(transaction, {
+        tenantId,
+        actorApiKeyId: apiKeyId,
+        action: 'SOURCE_REGISTERED',
+        resourceId: created.id,
       });
       return { body: mapSource(created), created: true };
     });

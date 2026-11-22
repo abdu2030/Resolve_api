@@ -17,6 +17,7 @@ const expectedTables = [
   'tenants',
 ];
 const expectedEnums = [
+  'audit_action',
   'canonical_selection_rule',
   'canonical_trigger_operation',
   'entity_operation_type',

@@ -1,7 +1,17 @@
 import type { Server } from 'node:http';
 import 'reflect-metadata';
 
-import { BadRequestException, Body, Controller, Get, Module, Post, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpException,
+  InternalServerErrorException,
+  Module,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
@@ -26,6 +36,19 @@ class BoundaryController {
       409,
       'SOURCE_TYPE_CONFLICT',
       'Source type conflicts with existing source',
+    );
+  }
+
+  @Get('internal-error')
+  internalError(): never {
+    throw new InternalServerErrorException('private-internal-details');
+  }
+
+  @Get('untrusted-error-envelope')
+  untrustedErrorEnvelope(): never {
+    throw new HttpException(
+      { error: { code: 'UNSAFE', message: 'private-internal-details' } },
+      503,
     );
   }
 }
@@ -86,5 +109,75 @@ describe('HTTP boundary', () => {
       });
     expect(response.status).toBe(409);
     await app.close();
+  });
+
+  it.each([
+    [
+      'malformed JSON',
+      '{"email":"private@example.test"',
+      400,
+      'BAD_REQUEST',
+      'Malformed JSON body',
+    ],
+    [
+      'oversized JSON',
+      JSON.stringify({ email: 'private@example.test'.repeat(6) }),
+      413,
+      'PAYLOAD_TOO_LARGE',
+      'Request body exceeds the size limit',
+    ],
+  ])('returns a safe HTTP error for %s', async (_scenario, body, status, code, message) => {
+    const fixture = await Test.createTestingModule({ imports: [BoundaryModule] }).compile();
+    const app = fixture.createNestApplication({ bodyParser: false, logger: false });
+    configureApplication(app, '100b');
+    await app.init();
+    try {
+      const response = await request(app.getHttpServer() as Server)
+        .post('/v1/probe')
+        .set('Content-Type', 'application/json')
+        .send(body)
+        .expect(status);
+
+      expect(response.body).toEqual({ error: { code, message } });
+      expect(response.text).not.toContain('private@example.test');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('masks details from explicit server errors', async () => {
+    const fixture = await Test.createTestingModule({ imports: [BoundaryModule] }).compile();
+    const app = fixture.createNestApplication({ bodyParser: false, logger: false });
+    configureApplication(app, '100b');
+    await app.init();
+    try {
+      const response = await request(app.getHttpServer() as Server).get('/v1/internal-error');
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({
+        error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('masks untrusted error envelopes while preserving their HTTP status', async () => {
+    const fixture = await Test.createTestingModule({ imports: [BoundaryModule] }).compile();
+    const app = fixture.createNestApplication({ bodyParser: false, logger: false });
+    configureApplication(app, '100b');
+    await app.init();
+    try {
+      const response = await request(app.getHttpServer() as Server).get(
+        '/v1/untrusted-error-envelope',
+      );
+
+      expect(response.status).toBe(503);
+      expect(response.body).toEqual({
+        error: { code: 'SERVICE_UNAVAILABLE', message: 'Service unavailable' },
+      });
+    } finally {
+      await app.close();
+    }
   });
 });

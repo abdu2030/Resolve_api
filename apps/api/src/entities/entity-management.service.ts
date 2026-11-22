@@ -10,6 +10,7 @@ import {
 } from '@resolve/contracts';
 import { type DatabaseEntityType, Prisma, type ResolvePrismaClient } from '@resolve/database';
 
+import { appendAuditEvent } from '../audit/audit-events.js';
 import type { AuthPrincipal } from '../auth/auth-principal.js';
 import { CanonicalizationService } from '../canonicalization/canonicalization.service.js';
 import { acquireTransactionLock } from '../common/database/advisory-lock.js';
@@ -52,6 +53,12 @@ const ENTITY_OPERATION_EVENTS = {
   SPLIT: 'entity.split',
   UNMERGE: 'entity.merge_reversed',
 } satisfies Record<'MERGE' | 'SPLIT' | 'UNMERGE', WebhookEventType>;
+
+const ENTITY_OPERATION_AUDIT_ACTIONS = {
+  MERGE: 'ENTITY_MERGED',
+  SPLIT: 'ENTITY_SPLIT',
+  UNMERGE: 'ENTITY_MERGE_REVERSED',
+} as const;
 
 @Injectable()
 export class EntityManagementService {
@@ -198,10 +205,23 @@ export class EntityManagementService {
           responseBody: execution.body as unknown as Prisma.InputJsonObject,
         },
       });
-      await publishWebhookEvent(transaction, tenantId, ENTITY_OPERATION_EVENTS[plan.type], {
+      const eventData = {
         operation_id: event.id,
         source_entity_id: plan.source.id,
         target_entity_id: plan.target.id,
+      };
+      await publishWebhookEvent(
+        transaction,
+        tenantId,
+        ENTITY_OPERATION_EVENTS[plan.type],
+        eventData,
+      );
+      await appendAuditEvent(transaction, {
+        tenantId,
+        actorApiKeyId: principal.apiKeyId,
+        action: ENTITY_OPERATION_AUDIT_ACTIONS[plan.type],
+        resourceId: request.entityId,
+        data: eventData,
       });
       return execution;
     });

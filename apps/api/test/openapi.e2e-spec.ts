@@ -52,7 +52,7 @@ describe('OpenAPI document', () => {
     await app.close();
   });
 
-  it('publishes the service identity and health path', async () => {
+  it('publishes the service identity and unversioned health paths', async () => {
     const response = await request(app.getHttpServer() as Server)
       .get('/docs-json')
       .expect(200);
@@ -63,5 +63,7 @@ describe('OpenAPI document', () => {
       version: '0.1.0',
     });
     expect(document.paths).toHaveProperty('/health');
+    expect(document.paths).toHaveProperty('/health/live');
+    expect(document.paths).toHaveProperty('/health/ready');
   });
 });

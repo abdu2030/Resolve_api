@@ -4,6 +4,7 @@ import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
+import { configureApplication } from '../src/bootstrap.js';
 import { HealthController } from '../src/health/health.controller.js';
 import { HealthService } from '../src/health/health.service.js';
 import {
@@ -31,7 +32,8 @@ async function createApp(redis: HealthIndicator): Promise<INestApplication> {
       { provide: REDIS_HEALTH_INDICATOR, useValue: redis },
     ],
   }).compile();
-  const app = module.createNestApplication();
+  const app = module.createNestApplication({ bodyParser: false, logger: false });
+  configureApplication(app, '1mb');
   await app.init();
   return app;
 }
@@ -75,5 +77,35 @@ describe('GET /health', () => {
       timestamp: '2026-09-06T10:00:00.000Z',
     });
     expect(response.text).not.toContain('secret');
+  });
+
+  it('serves the same readiness response at /health/ready', async () => {
+    app = await createApp({ check: () => Promise.reject(new Error('Dependency is down')) });
+    const server = app.getHttpServer() as Server;
+    const original = await request(server).get('/health').expect(503);
+    const readiness = await request(server).get('/health/ready').expect(503);
+
+    expect(readiness.body).toEqual(original.body);
+    await request(server).get('/v1/health/ready').expect(404);
+  });
+
+  it('serves liveness without probing dependencies', async () => {
+    let probes = 0;
+    app = await createApp({
+      check: () => {
+        probes++;
+        return Promise.reject(new Error('Dependency is down'));
+      },
+    });
+
+    await request(app.getHttpServer() as Server)
+      .get('/health/live')
+      .expect(200, {
+        service: 'resolve-api',
+        status: 'ok',
+        timestamp: '2026-09-06T10:00:00.000Z',
+      });
+
+    expect(probes).toBe(0);
   });
 });

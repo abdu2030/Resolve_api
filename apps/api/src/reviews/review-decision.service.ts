@@ -6,6 +6,7 @@ import {
   type ReviewDecisionResult,
 } from '@resolve/contracts';
 import { Prisma, type ResolvePrismaClient } from '@resolve/database';
+import { appendAuditEvent } from '../audit/audit-events.js';
 import type { AuthPrincipal } from '../auth/auth-principal.js';
 import { CanonicalizationService } from '../canonicalization/canonicalization.service.js';
 import { acquireTransactionLock } from '../common/database/advisory-lock.js';
@@ -135,6 +136,13 @@ export class ReviewDecisionService {
           responseStatus: 200,
           responseBody: body as unknown as Prisma.InputJsonObject,
         },
+      });
+      await appendAuditEvent(transaction, {
+        tenantId,
+        actorApiKeyId: principal.apiKeyId,
+        action: 'REVIEW_RESOLVED',
+        resourceId: id,
+        data: { review_decision_id: decision.id, decision: input.decision },
       });
       return { body, replayed: false };
     });

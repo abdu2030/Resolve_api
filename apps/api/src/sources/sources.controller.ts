@@ -48,7 +48,7 @@ export class SourcesController {
     @Body() input: CreateSourceDto,
     @Res({ passthrough: true }) response: Response,
   ): Promise<SourceResponseDto> {
-    const result = await this.registration.register(request.principal!.tenantId, input);
+    const result = await this.registration.register(request.principal!, input);
     response.status(result.created ? HttpStatus.CREATED : HttpStatus.OK);
     return result.body;
   }

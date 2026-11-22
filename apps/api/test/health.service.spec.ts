@@ -1,3 +1,5 @@
+import { jest } from '@jest/globals';
+
 import { HealthService } from '../src/health/health.service.js';
 import type { Clock, HealthIndicator } from '../src/health/health.types.js';
 
@@ -41,5 +43,28 @@ describe('HealthService', () => {
       timestamp: '2026-09-06T10:00:00.000Z',
     });
     expect(JSON.stringify(result)).not.toContain('do-not-leak');
+  });
+
+  it('returns within one second when both dependency probes stall', async () => {
+    jest.useFakeTimers();
+    try {
+      const stalled: HealthIndicator = {
+        check: () => new Promise(() => undefined),
+      };
+      const service = new HealthService(stalled, stalled, fixedClock);
+      const health = jest.fn();
+      void service.check().then(health);
+
+      await jest.advanceTimersByTimeAsync(1_000);
+
+      expect(health).toHaveBeenCalledWith({
+        checks: { database: 'down', redis: 'down' },
+        service: 'resolve-api',
+        status: 'error',
+        timestamp: '2026-09-06T10:00:00.000Z',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

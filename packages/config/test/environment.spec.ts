@@ -27,6 +27,11 @@ describe('validateEnvironment', () => {
       blockingMaxCandidates: 100,
       databaseUrl: validEnvironment.DATABASE_URL,
       nodeEnv: 'development',
+      rateLimitBatchKeyMax: 20,
+      rateLimitBatchTenantMax: 100,
+      rateLimitKeyMax: 600,
+      rateLimitTenantMax: 3000,
+      rateLimitWindowSeconds: 60,
       redisHost: 'localhost',
       redisPort: 6379,
       requestBodyLimit: '1mb',
@@ -48,6 +53,31 @@ describe('validateEnvironment', () => {
     expect(
       validateEnvironment({ ...validEnvironment, WEBHOOK_ENCRYPTION_KEY: '' }),
     ).not.toHaveProperty('webhookEncryptionKey');
+  });
+
+  it('supports explicit budgets and a separate metrics token', () => {
+    const metricsToken = 'fe'.repeat(32);
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        METRICS_TOKEN: metricsToken,
+        RATE_LIMIT_BATCH_KEY_MAX: '1',
+        RATE_LIMIT_BATCH_TENANT_MAX: '2',
+        RATE_LIMIT_KEY_MAX: '3',
+        RATE_LIMIT_TENANT_MAX: '5',
+        RATE_LIMIT_WINDOW_SECONDS: '15',
+      }),
+    ).toMatchObject({
+      metricsToken,
+      rateLimitBatchKeyMax: 1,
+      rateLimitBatchTenantMax: 2,
+      rateLimitKeyMax: 3,
+      rateLimitTenantMax: 5,
+      rateLimitWindowSeconds: 15,
+    });
+    expect(validateEnvironment({ ...validEnvironment, METRICS_TOKEN: '' })).not.toHaveProperty(
+      'metricsToken',
+    );
   });
 
   it('accepts an isolated queue prefix and rejects Redis key separators', () => {
@@ -89,6 +119,9 @@ describe('validateEnvironment', () => {
   it.each([
     ['DATABASE_URL', { ...validEnvironment, DATABASE_URL: '' }],
     ['WEBHOOK_ENCRYPTION_KEY', { ...validEnvironment, WEBHOOK_ENCRYPTION_KEY: 'invalid-secret' }],
+    ['METRICS_TOKEN', { ...validEnvironment, METRICS_TOKEN: 'invalid-metrics-secret' }],
+    ['RATE_LIMIT_KEY_MAX', { ...validEnvironment, RATE_LIMIT_KEY_MAX: '0' }],
+    ['RATE_LIMIT_WINDOW_SECONDS', { ...validEnvironment, RATE_LIMIT_WINDOW_SECONDS: '3601' }],
     ['WEBHOOK_MAX_ATTEMPTS', { ...validEnvironment, WEBHOOK_MAX_ATTEMPTS: '11' }],
     ['WEBHOOK_RETRY_BASE_MS', { ...validEnvironment, WEBHOOK_RETRY_BASE_MS: '0' }],
     ['API_PORT', { ...validEnvironment, API_PORT: 'zero' }],

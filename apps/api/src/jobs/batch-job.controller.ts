@@ -32,6 +32,7 @@ import { RequireScopes } from '../auth/require-scopes.decorator.js';
 import { API_ERROR_SCHEMA } from '../common/http/api-error-schema.js';
 import { ApiException } from '../common/http/api-exception.js';
 import type { RawBodyRequest } from '../common/http/raw-body-request.js';
+import { LimitBatchRate } from '../rate-limits/rate-limit.guard.js';
 import { validateIdempotencyKey } from '../records/idempotency-key.js';
 import { AcceptedBatchDto, BatchJobDto } from './batch-job.dto.js';
 import { BatchJobService, type StoredBatchRecord } from './batch-job.service.js';
@@ -47,6 +48,7 @@ export class BatchJobController {
   constructor(private readonly jobs: BatchJobService) {}
 
   @Post('records/batch')
+  @LimitBatchRate()
   @HttpCode(202)
   @RequireScopes('records:write')
   @ApiHeader({
