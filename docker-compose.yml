@@ -48,6 +48,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REQUEST_BODY_LIMIT: ${REQUEST_BODY_LIMIT:-1mb}
+      WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:-}
     healthcheck:
       test:
         [
@@ -75,12 +76,15 @@ services:
     environment:
       API_PORT: 3000
       BATCH_QUEUE_PREFIX: ${BATCH_QUEUE_PREFIX:-resolve}
+      WEBHOOK_MAX_ATTEMPTS: ${WEBHOOK_MAX_ATTEMPTS:-5}
+      WEBHOOK_RETRY_BASE_MS: ${WEBHOOK_RETRY_BASE_MS:-1000}
       BLOCKING_MAX_CANDIDATES: ${BLOCKING_MAX_CANDIDATES:-100}
       DATABASE_URL: postgresql://${POSTGRES_USER:-resolve}:${POSTGRES_PASSWORD:-resolve}@postgres:5432/${POSTGRES_DB:-resolve}?schema=public
       NODE_ENV: production
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REQUEST_BODY_LIMIT: ${REQUEST_BODY_LIMIT:-1mb}
+      WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:-}
 
 volumes:
   postgres-data:

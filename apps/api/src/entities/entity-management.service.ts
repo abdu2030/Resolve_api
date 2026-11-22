@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
+import { publishWebhookEvent, type WebhookEventType } from '../webhooks/webhook-events.js';
 import {
   ENTITY_OPERATIONS_VERSION,
   type EntityOperationResult,
@@ -45,6 +46,12 @@ interface MutationPlan {
   reversedOperationId: string | null;
   newTargetType?: DatabaseEntityType;
 }
+
+const ENTITY_OPERATION_EVENTS = {
+  MERGE: 'entity.merged',
+  SPLIT: 'entity.split',
+  UNMERGE: 'entity.merge_reversed',
+} satisfies Record<'MERGE' | 'SPLIT' | 'UNMERGE', WebhookEventType>;
 
 @Injectable()
 export class EntityManagementService {
@@ -190,6 +197,11 @@ export class EntityManagementService {
           responseStatus: execution.httpStatus,
           responseBody: execution.body as unknown as Prisma.InputJsonObject,
         },
+      });
+      await publishWebhookEvent(transaction, tenantId, ENTITY_OPERATION_EVENTS[plan.type], {
+        operation_id: event.id,
+        source_entity_id: plan.source.id,
+        target_entity_id: plan.target.id,
       });
       return execution;
     });

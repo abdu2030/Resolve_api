@@ -16,6 +16,7 @@ import { hashCanonicalJson } from '../common/json/canonical-json.js';
 import { CanonicalizationService } from '../canonicalization/canonicalization.service.js';
 import { PRISMA_CLIENT } from '../infrastructure/infrastructure.tokens.js';
 import { ResolutionService } from '../resolution/resolution.service.js';
+import { publishWebhookEvent } from '../webhooks/webhook-events.js';
 import type { RecordIngestionExecution } from './record-response.dto.js';
 
 const OPERATION = 'POST /v1/records';
@@ -121,6 +122,16 @@ export class RecordIngestionService {
       httpStatus: persistence.httpStatus,
       replayed: false,
     };
+
+    if (execution.body.operation !== 'UNCHANGED') {
+      const { record_id, entity_id, decision, version } = execution.body;
+      await publishWebhookEvent(transaction, tenantId, 'record.resolved', {
+        record_id,
+        entity_id,
+        decision,
+        version,
+      });
+    }
 
     if (idempotencyKey) {
       await transaction.idempotencyRequest.create({

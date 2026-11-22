@@ -114,6 +114,8 @@ model Tenant {
   entityOperations     EntityOperation[]
   reviewDecisions      ReviewDecision[]
   jobs                 Job[]
+  webhookEndpoints     WebhookEndpoint[]
+  webhookEvents        WebhookEvent[]
 
   @@map("tenants")
 }
@@ -470,4 +472,89 @@ model ReviewDecision {
   @@unique([tenantId, id], map: "review_decisions_tenant_id_key")
   @@unique([tenantId, reviewCaseId], map: "review_decisions_tenant_case_key")
   @@map("review_decisions")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  RUNNING
+  DELIVERED
+  DEAD_LETTER
+
+  @@map("webhook_delivery_status")
+}
+
+enum WebhookAttemptOutcome {
+  STARTED
+  DELIVERED
+  FAILED
+  INTERRUPTED
+
+  @@map("webhook_attempt_outcome")
+}
+
+model WebhookEndpoint {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String            @map("tenant_id") @db.Uuid
+  url             String            @db.VarChar(2048)
+  events          String[]
+  encryptedSecret String            @map("encrypted_secret")
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "webhook_endpoints_tenant_fkey")
+  deliveries      WebhookDelivery[]
+
+  @@unique([tenantId, id], map: "webhook_endpoints_tenant_id_key")
+  @@unique([tenantId, url], map: "webhook_endpoints_tenant_url_key")
+  @@map("webhook_endpoints")
+}
+
+model WebhookEvent {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String            @map("tenant_id") @db.Uuid
+  type        String            @db.VarChar(50)
+  data        Json
+  occurredAt  DateTime          @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "webhook_events_tenant_fkey")
+  deliveries  WebhookDelivery[]
+
+  @@unique([tenantId, id], map: "webhook_events_tenant_id_key")
+  @@map("webhook_events")
+}
+
+model WebhookDelivery {
+  id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String                @map("tenant_id") @db.Uuid
+  endpointId         String                @map("endpoint_id") @db.Uuid
+  eventId            String                @map("event_id") @db.Uuid
+  status             WebhookDeliveryStatus @default(PENDING)
+  attempts           Int                   @default(0)
+  replayStartAttempt Int                   @default(0) @map("replay_start_attempt")
+  availableAt        DateTime              @default(now()) @map("available_at") @db.Timestamptz(3)
+  finishedAt         DateTime?             @map("finished_at") @db.Timestamptz(3)
+  lastError          String?               @map("last_error") @db.VarChar(50)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  endpoint           WebhookEndpoint       @relation(fields: [tenantId, endpointId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "webhook_deliveries_endpoint_fkey")
+  event              WebhookEvent          @relation(fields: [tenantId, eventId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "webhook_deliveries_event_fkey")
+  attemptHistory     WebhookAttempt[]
+
+  @@unique([tenantId, id], map: "webhook_deliveries_tenant_id_key")
+  @@unique([tenantId, endpointId, eventId], map: "webhook_deliveries_event_endpoint_key")
+  @@index([status, availableAt, id], map: "webhook_deliveries_due_idx")
+  @@index([tenantId, endpointId, createdAt(sort: Desc), id(sort: Desc)], map: "webhook_deliveries_endpoint_created_idx")
+  @@index([tenantId, eventId], map: "webhook_deliveries_event_idx")
+  @@map("webhook_deliveries")
+}
+
+model WebhookAttempt {
+  tenantId   String                @map("tenant_id") @db.Uuid
+  deliveryId String                @map("delivery_id") @db.Uuid
+  number     Int
+  outcome    WebhookAttemptOutcome @default(STARTED)
+  startedAt  DateTime              @default(now()) @map("started_at") @db.Timestamptz(3)
+  finishedAt DateTime?             @map("finished_at") @db.Timestamptz(3)
+  httpStatus Int?                  @map("http_status")
+  errorCode  String?               @map("error_code") @db.VarChar(50)
+  delivery   WebhookDelivery       @relation(fields: [tenantId, deliveryId], references: [tenantId, id], onDelete: Restrict, onUpdate: NoAction, map: "webhook_attempts_delivery_fkey")
+
+  @@id([tenantId, deliveryId, number], map: "webhook_attempts_pkey")
+  @@map("webhook_attempts")
 }

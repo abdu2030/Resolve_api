@@ -7,6 +7,7 @@ export const API_SCOPES = [
   'entities:split',
   'reviews:read',
   'reviews:write',
+  'webhooks:manage',
 ] as const;
 
 export type ApiScope = (typeof API_SCOPES)[number];

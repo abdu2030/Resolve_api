@@ -11,6 +11,7 @@ import { JobsModule } from './jobs/jobs.module.js';
 import { RecordsModule } from './records/records.module.js';
 import { SourcesModule } from './sources/sources.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
+import { WebhookEndpointsModule } from './webhooks/webhook-endpoints.module.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ReviewsModule } from './reviews/reviews.module.js';
     RecordsModule,
     SourcesModule,
     ReviewsModule,
+    WebhookEndpointsModule,
   ],
 })
 export class AppModule {}

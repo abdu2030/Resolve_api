@@ -6,6 +6,7 @@ import { Prisma, type ResolvePrismaClient } from '@resolve/database';
 import { ApiException, type ApiErrorBody } from '../common/http/api-exception.js';
 import { PRISMA_CLIENT } from '../infrastructure/infrastructure.tokens.js';
 import { RecordIngestionService } from '../records/record-ingestion.service.js';
+import { publishWebhookEvent } from '../webhooks/webhook-events.js';
 import type { StoredBatchRecord } from './batch-job.service.js';
 
 export const BATCH_MAX_ATTEMPTS = 3;
@@ -55,10 +56,9 @@ export class BatchExecutionService {
   }
 
   async markDeliveryFailed(identity: BatchIdentity): Promise<void> {
-    await this.prisma.job.updateMany({
-      where: { ...identity, status: { in: [...NONTERMINAL] } },
-      data: { status: 'FAILED', errorCode: 'BATCH_DELIVERY_FAILED', finishedAt: new Date() },
-    });
+    await this.prisma.$transaction((transaction) =>
+      failBatch(transaction, identity, 'BATCH_DELIVERY_FAILED'),
+    );
   }
 
   async process(identity: BatchIdentity): Promise<void> {
@@ -70,17 +70,21 @@ export class BatchExecutionService {
       }
     } catch {
       const last = attempt.number >= BATCH_MAX_ATTEMPTS;
-      await this.prisma.job.updateMany({
-        where: {
-          tenantId: attempt.tenantId,
-          id: attempt.id,
-          status: 'RUNNING',
-          attempts: attempt.number,
-        },
-        data: last
-          ? { status: 'FAILED', errorCode: 'BATCH_RETRIES_EXHAUSTED', finishedAt: new Date() }
-          : { status: 'RETRYING' },
-      });
+      if (last) {
+        await this.prisma.$transaction((transaction) =>
+          failBatch(transaction, attempt, 'BATCH_RETRIES_EXHAUSTED', attempt.number),
+        );
+      } else {
+        await this.prisma.job.updateMany({
+          where: {
+            tenantId: attempt.tenantId,
+            id: attempt.id,
+            status: 'RUNNING',
+            attempts: attempt.number,
+          },
+          data: { status: 'RETRYING' },
+        });
+      }
       // Redis and logs must not receive database errors containing record data.
       throw new Error(last ? 'Batch attempts exhausted' : 'Batch processing will retry');
     }
@@ -92,10 +96,7 @@ export class BatchExecutionService {
       if (!job || job.status === 'FAILED' || job.status === 'SUCCEEDED') return;
       const where = tenantJobKey(identity);
       if (job.attempts >= BATCH_MAX_ATTEMPTS) {
-        await transaction.job.update({
-          where,
-          data: { status: 'FAILED', errorCode: 'BATCH_RETRIES_EXHAUSTED', finishedAt: new Date() },
-        });
+        await failBatch(transaction, identity, 'BATCH_RETRIES_EXHAUSTED');
         return;
       }
       const number = job.attempts + 1;
@@ -123,10 +124,7 @@ export class BatchExecutionService {
         select: { status: true },
       });
       if (tenant.status !== 'ACTIVE') {
-        await transaction.job.update({
-          where,
-          data: { status: 'FAILED', errorCode: 'TENANT_INACTIVE', finishedAt: new Date() },
-        });
+        await failBatch(transaction, attempt, 'TENANT_INACTIVE', attempt.number);
         return false;
       }
 
@@ -178,7 +176,37 @@ export class BatchExecutionService {
             : {}),
         },
       });
+      if (finished) {
+        await publishWebhookEvent(transaction, attempt.tenantId, 'job.completed', {
+          job_id: attempt.id,
+          status: failed > 0 ? 'FAILED' : 'SUCCEEDED',
+        });
+      }
       return !finished;
+    });
+  }
+}
+
+async function failBatch(
+  transaction: Prisma.TransactionClient,
+  { id, tenantId }: BatchIdentity,
+  errorCode: string,
+  attempt?: number,
+): Promise<void> {
+  const failed = await transaction.job.updateMany({
+    where: {
+      id,
+      tenantId,
+      ...(attempt === undefined
+        ? { status: { in: [...NONTERMINAL] } }
+        : { status: 'RUNNING', attempts: attempt }),
+    },
+    data: { status: 'FAILED', errorCode, finishedAt: new Date() },
+  });
+  if (failed.count) {
+    await publishWebhookEvent(transaction, tenantId, 'job.completed', {
+      job_id: id,
+      status: 'FAILED',
     });
   }
 }

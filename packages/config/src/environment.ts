@@ -9,6 +9,9 @@ export interface EnvironmentConfig {
   redisHost: string;
   redisPort: number;
   requestBodyLimit: string;
+  webhookEncryptionKey?: string;
+  webhookMaxAttempts: number;
+  webhookRetryBaseMs: number;
 }
 
 const SUPPORTED_ENVIRONMENTS = new Set<NodeEnvironment>(['development', 'production', 'test']);
@@ -73,6 +76,13 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     return invalid('BATCH_QUEUE_PREFIX');
   }
 
+  const webhookEncryptionKey = input.WEBHOOK_ENCRYPTION_KEY;
+  if (webhookEncryptionKey !== undefined && webhookEncryptionKey !== '') {
+    if (typeof webhookEncryptionKey !== 'string' || !/^[a-f0-9]{64}$/i.test(webhookEncryptionKey)) {
+      return invalid('WEBHOOK_ENCRYPTION_KEY');
+    }
+  }
+
   return {
     apiPort: port(input, 'API_PORT'),
     batchQueuePrefix,
@@ -87,5 +97,8 @@ export function validateEnvironment(input: Record<string, unknown>): Environment
     redisHost: requiredString(input, 'REDIS_HOST'),
     redisPort: port(input, 'REDIS_PORT'),
     requestBodyLimit,
+    ...(webhookEncryptionKey ? { webhookEncryptionKey } : {}),
+    webhookMaxAttempts: optionalInteger(input, 'WEBHOOK_MAX_ATTEMPTS', 5, 10),
+    webhookRetryBaseMs: optionalInteger(input, 'WEBHOOK_RETRY_BASE_MS', 1000, 60_000),
   };
 }

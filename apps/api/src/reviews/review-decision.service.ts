@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { publishWebhookEvent } from '../webhooks/webhook-events.js';
 import {
   REVIEW_POLICY_VERSION,
   type ReviewDecisionDto,
@@ -118,6 +119,13 @@ export class ReviewDecisionService {
         decision: input.decision,
       });
       const body = mapReviewDecision(decision);
+      await publishWebhookEvent(transaction, tenantId, 'review.resolved', {
+        review_id: id,
+        review_decision_id: decision.id,
+        record_id: row.sourceRecordId,
+        entity_id: entity.id,
+        decision: input.decision,
+      });
       await transaction.idempotencyRequest.create({
         data: {
           tenantId,

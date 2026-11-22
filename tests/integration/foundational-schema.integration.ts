@@ -27,6 +27,8 @@ const expectedEnums = [
   'review_case_status',
   'review_outcome',
   'tenant_status',
+  'webhook_attempt_outcome',
+  'webhook_delivery_status',
 ];
 const expectedIndexes = [
   'api_keys_key_hash_key',

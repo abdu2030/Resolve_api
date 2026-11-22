@@ -1,7 +1,7 @@
 import { parseBootstrapArguments } from './bootstrap-api-key.js';
 
 describe('API-key bootstrap arguments', () => {
-  it('defaults to all eight supported scopes', () => {
+  it('defaults to all supported scopes', () => {
     expect(
       parseBootstrapArguments(['--tenant-name', 'Local Demo', '--environment', 'test']),
     ).toEqual({
@@ -16,6 +16,7 @@ describe('API-key bootstrap arguments', () => {
         'entities:split',
         'reviews:read',
         'reviews:write',
+        'webhooks:manage',
       ],
       tenantName: 'Local Demo',
     });
