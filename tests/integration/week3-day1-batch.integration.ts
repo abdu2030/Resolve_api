@@ -14,6 +14,10 @@ import { generateApiKey } from '../../apps/api/src/auth/api-key.js';
 import type { AcceptedBatchDto, BatchJobDto } from '../../apps/api/src/jobs/batch-job.dto.js';
 import type { createWorker } from '../../apps/worker/src/worker.js';
 
+// BullMQ checks every 30 seconds. The previous worker's locks can delay the
+// scans that mark the job as stalled and put it back on the queue.
+const stalledJobRecoveryTimeoutMs = 130_000;
+
 describe('Week 3 batch HTTP and worker', () => {
   const schema = `resolve_batch_${randomUUID().replaceAll('-', '')}`;
   const url = new URL(
@@ -457,7 +461,7 @@ describe('Week 3 batch HTTP and worker', () => {
     }
   });
 
-  it('recovers an active BullMQ job after killing the worker with one item committed', async () => {
+  async function recoverAfterWorkerCrash(): Promise<void> {
     await worker?.close();
     worker = undefined;
     const batch = [
@@ -491,7 +495,7 @@ describe('Week 3 batch HTTP and worker', () => {
     });
     const replacement = await startChildWorker();
     try {
-      const recovered = await waitForJob(id, 75_000);
+      const recovered = await waitForJob(id, stalledJobRecoveryTimeoutMs);
       expect(recovered).toMatchObject({
         status: 'SUCCEEDED',
         attempts: 2,
@@ -520,5 +524,11 @@ describe('Week 3 batch HTTP and worker', () => {
     } finally {
       await stopWorker(replacement.child);
     }
-  });
+  }
+
+  it(
+    'recovers an active BullMQ job after killing the worker with one item committed',
+    recoverAfterWorkerCrash,
+    stalledJobRecoveryTimeoutMs + 30_000,
+  );
 });

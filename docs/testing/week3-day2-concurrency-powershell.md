@@ -39,8 +39,8 @@ Expect eight tests to pass. The new checks verify the following behavior:
 3. After the first record commits, the test kills the worker while the second
    record is blocked. PostgreSQL shows one processed item. A new worker recovers
    the stalled BullMQ job, retains the first result, and finishes the second
-   record in attempt two. BullMQ's lock expiration and stalled checks can take
-   about a minute.
+   record in attempt two. The test allows up to 130 seconds for BullMQ's lock
+   expiration and stalled checks. It returns as soon as the job finishes.
 
 The suite also checks transient retries after partial success, retry exhaustion,
 tenant isolation, and continuation after a permanent record conflict.
