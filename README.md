@@ -17,6 +17,11 @@ and detailed endpoint behavior.
 
 ## Current milestone
 
+Week 3 Day 7 completes the MVP with a repeatable CRM and billing demo.
+The [MVP demo guide](docs/testing/week3-day7-mvp-demo.md) covers automatic
+matching, review approval, merge reversal, idempotency, batch processing,
+tenant isolation, and the synthetic golden dataset results.
+
 Week 3 Day 6 completes the setup and OpenAPI documentation, makes
 Compose run migrations on startup, and adds a working client example.
 
