@@ -15,6 +15,8 @@ Open [Swagger UI](http://localhost:3000/docs) or download the
 Use the [v1 API contract](docs/contracts/mvp-v1.md) for scopes, errors,
 and detailed endpoint behavior.
 
+For a private staging host, use the [staging deployment and restore runbook](docs/staging.md).
+
 ## Current milestone
 
 Week 3 Day 7 completes the MVP with a repeatable CRM and billing demo.
