@@ -52,3 +52,18 @@ jobs:
       - run: npm test
       - run: npm run test:integration
       - run: docker compose config
+      - name: Verify staging port bindings
+        env:
+          POSTGRES_PASSWORD: config-test
+          METRICS_TOKEN: config-test
+          WEBHOOK_ENCRYPTION_KEY: config-test
+          STAGING_TLS_CERT: /tmp/resolve-staging-cert.pem
+          STAGING_TLS_KEY: /tmp/resolve-staging-key.pem
+        run: |
+          set -o pipefail
+          docker compose --env-file .env.staging.example -f docker-compose.yml -f docker-compose.staging.yml config --format json |
+            jq -e '
+              [.services | to_entries[] | select(.value.ports | length > 0) | .key] == ["proxy"] and
+              (.services.proxy.ports | length == 1 and .[0].host_ip == "127.0.0.1" and
+                .[0].published == "443" and .[0].target == 443 and .[0].protocol == "tcp")
+            ' > /dev/null

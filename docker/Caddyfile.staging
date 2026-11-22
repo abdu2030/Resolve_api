@@ -1,0 +1,12 @@
+{
+	admin off
+	auto_https off
+	servers {
+		protocols h1 h2
+	}
+}
+
+https://{$STAGING_HOSTNAME} {
+	tls /etc/caddy/staging-cert.pem /etc/caddy/staging-key.pem
+	reverse_proxy api:3000
+}

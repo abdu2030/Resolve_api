@@ -1,0 +1,68 @@
+name: resolve-staging
+
+services:
+  postgres:
+    restart: unless-stopped
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a staging database password}
+
+  redis:
+    restart: unless-stopped
+    ports: !reset []
+
+  api:
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    command: ['node', 'apps/api/dist/main.js']
+    ports: !reset []
+    networks: [default, edge]
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:?Set the staging metrics token}
+      WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:?Set the staging webhook encryption key}
+
+  worker:
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    command: ['node', 'apps/worker/dist/main.js']
+    environment:
+      WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:?Set the staging webhook encryption key}
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      STAGING_HOSTNAME: ${STAGING_HOSTNAME:?Set the DNS name on the staging TLS certificate}
+    ports:
+      - host_ip: ${STAGING_BIND_IP:-127.0.0.1}
+        published: '${STAGING_HTTPS_PORT:-443}'
+        target: 443
+        protocol: tcp
+    networks: [edge]
+    volumes:
+      - type: bind
+        source: ./docker/Caddyfile.staging
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${STAGING_TLS_CERT:?Set the absolute path to the staging TLS certificate chain}
+        target: /etc/caddy/staging-cert.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${STAGING_TLS_KEY:?Set the absolute path to the staging TLS private key}
+        target: /etc/caddy/staging-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
+
+networks:
+  edge:
