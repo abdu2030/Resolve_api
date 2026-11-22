@@ -65,6 +65,7 @@ interface Day4OpenApiDocument {
   paths: {
     '/v1/sources': { post: OpenApiOperation };
     '/v1/records': { post: OpenApiOperation };
+    '/v1/records/batch': { post: OpenApiOperation };
   };
 }
 
@@ -176,8 +177,36 @@ describe('Day 4 API', () => {
       type: 'object',
       required: ['source', 'external_id', 'entity_type', 'data'],
     });
+    const singleRecord = records.requestBody.content['application/json'].schema;
+    const batch = document.paths['/v1/records/batch'].post;
+    expect(batch.requestBody.content['application/json'].schema).toHaveProperty(
+      ['properties', 'records', 'items'],
+      singleRecord,
+    );
+    expect(singleRecord).toMatchObject({
+      oneOf: [
+        {
+          properties: {
+            entity_type: { enum: ['person'] },
+            data: {
+              additionalProperties: false,
+              properties: { company_domain: { type: 'string' } },
+            },
+          },
+        },
+        {
+          properties: {
+            entity_type: { enum: ['company'] },
+            data: {
+              additionalProperties: false,
+              properties: { registration_id: { type: 'string' } },
+            },
+          },
+        },
+      ],
+    });
     expect(Object.keys(records.responses)).toEqual(
-      expect.arrayContaining(['200', '201', '400', '401', '403', '404', '409']),
+      expect.arrayContaining(['200', '201', '400', '401', '403', '404', '409', '413', '415']),
     );
     const recordResponse = document.components.schemas.RecordResponseDto;
     for (const requiredField of [

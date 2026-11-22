@@ -24,7 +24,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { BATCH_MAX_RECORDS, BatchInputDto, EntityType } from '@resolve/contracts';
+import { BATCH_MAX_RECORDS, BatchInputDto } from '@resolve/contracts';
 import type { Response } from 'express';
 
 import type { AuthenticatedRequest } from '../auth/auth-principal.js';
@@ -34,6 +34,7 @@ import { ApiException } from '../common/http/api-exception.js';
 import type { RawBodyRequest } from '../common/http/raw-body-request.js';
 import { LimitBatchRate } from '../rate-limits/rate-limit.guard.js';
 import { validateIdempotencyKey } from '../records/idempotency-key.js';
+import { ApiRecordBodyErrors, RECORD_REQUEST_SCHEMA } from '../records/record-request.openapi.js';
 import { AcceptedBatchDto, BatchJobDto } from './batch-job.dto.js';
 import { BatchJobService, type StoredBatchRecord } from './batch-job.service.js';
 
@@ -66,25 +67,12 @@ export class BatchJobController {
           type: 'array',
           minItems: 1,
           maxItems: BATCH_MAX_RECORDS,
-          items: {
-            type: 'object',
-            required: ['source', 'external_id', 'entity_type', 'data'],
-            additionalProperties: false,
-            properties: {
-              source: { type: 'string', pattern: '^[a-z][a-z0-9_-]*$', maxLength: 120 },
-              external_id: { type: 'string', maxLength: 255 },
-              entity_type: { type: 'string', enum: Object.values(EntityType) },
-              data: {
-                type: 'object',
-                description: 'Validated Person or Company payload',
-                additionalProperties: true,
-              },
-            },
-          },
+          items: RECORD_REQUEST_SCHEMA,
         },
       },
     },
   })
+  @ApiRecordBodyErrors()
   @ApiAcceptedResponse({
     type: AcceptedBatchDto,
     headers: { Location: { schema: { type: 'string' } } },

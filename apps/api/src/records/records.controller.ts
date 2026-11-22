@@ -12,7 +12,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { EntityType, RecordInputDto } from '@resolve/contracts';
+import { RecordInputDto } from '@resolve/contracts';
 import type { Response } from 'express';
 
 import type { AuthenticatedRequest } from '../auth/auth-principal.js';
@@ -22,6 +22,7 @@ import { ApiException } from '../common/http/api-exception.js';
 import type { RawBodyRequest } from '../common/http/raw-body-request.js';
 import { validateIdempotencyKey } from './idempotency-key.js';
 import { RecordIngestionService } from './record-ingestion.service.js';
+import { ApiRecordBodyErrors, RECORD_REQUEST_SCHEMA } from './record-request.openapi.js';
 import { RecordResponseDto } from './record-response.dto.js';
 
 @ApiTags('records')
@@ -37,23 +38,8 @@ export class RecordsController {
     required: false,
     description: '1-255 visible ASCII characters without whitespace',
   })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: ['source', 'external_id', 'entity_type', 'data'],
-      additionalProperties: false,
-      properties: {
-        source: { type: 'string', pattern: '^[a-z][a-z0-9_-]*$', maxLength: 120 },
-        external_id: { type: 'string', maxLength: 255 },
-        entity_type: { type: 'string', enum: Object.values(EntityType) },
-        data: {
-          type: 'object',
-          description: 'Validated Person or Company payload',
-          additionalProperties: true,
-        },
-      },
-    },
-  })
+  @ApiBody({ schema: RECORD_REQUEST_SCHEMA })
+  @ApiRecordBodyErrors()
   @ApiCreatedResponse({ type: RecordResponseDto })
   @ApiOkResponse({ type: RecordResponseDto })
   @ApiBadRequestResponse({ schema: API_ERROR_SCHEMA })

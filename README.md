@@ -2,7 +2,23 @@
 
 Resolve links imperfect Person and Company records to stable canonical entities. It preserves source truth and produces explainable, versioned, reversible identity decisions.
 
+## Quick start
+
+From a fresh clone, copy `.env.example` to `.env` and run
+`docker compose up --build --wait`. Compose applies database migrations
+and starts the API and worker. The
+[setup guide](docs/getting-started.md) covers the full flow and includes
+a [Node.js client example](examples/resolve-client.mjs).
+
+Open [Swagger UI](http://localhost:3000/docs) or download the
+[OpenAPI JSON](http://localhost:3000/docs-json) from the running API.
+Use the [v1 API contract](docs/contracts/mvp-v1.md) for scopes, errors,
+and detailed endpoint behavior.
+
 ## Current milestone
+
+Week 3 Day 6 completes the setup and OpenAPI documentation, makes
+Compose run migrations on startup, and adds a working client example.
 
 Week 3 Day 5 verifies tenant and scope protections, measures PostgreSQL
 blocking plans as data grows, and measures HTTP and batch throughput with
@@ -94,8 +110,10 @@ npm run test -- packages/matching/test
 | `TEST_DATABASE_URL`       | Optional URL used by database integration tests        | `DATABASE_URL`, then local Compose  |
 | `REDIS_HOST`              | Redis hostname                                         | `localhost`                         |
 | `REDIS_PORT`              | Redis port                                             | `6379`                              |
+| `REDIS_HOST_PORT`         | Published Redis port in Compose                        | `6379`                              |
 | `REQUEST_BODY_LIMIT`      | Maximum JSON request body size                         | `1mb`                               |
 | `POSTGRES_DB`             | Compose PostgreSQL database name                       | `resolve`                           |
+| `POSTGRES_PORT`           | Published PostgreSQL port in Compose                   | `5432`                              |
 | `POSTGRES_USER`           | Compose PostgreSQL user                                | `resolve`                           |
 | `POSTGRES_PASSWORD`       | Compose PostgreSQL password for local development only | `resolve`                           |
 
@@ -117,7 +135,7 @@ The application validates runtime variables at startup. Validation reports only 
 - Docker Desktop with Docker Compose
 - Git
 
-## Install
+## Install for host development
 
 PowerShell:
 
@@ -168,8 +186,7 @@ keys or raw customer responses into shared logs.
 ### 1. Prepare the checkout, dependencies, and local stack
 
 ```powershell
-$resolveCheckout = 'C:\Users\Admin\Desktop\Resolve Api'
-Set-Location $resolveCheckout # Substitute your checkout path if different.
+# Run from the repository root.
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 if (-not (Test-Path node_modules)) { npm ci }
 # If a normal installation is incomplete, restore dependencies with npm ci.
@@ -187,8 +204,7 @@ start this checkout's built API with the root environment explicitly loaded
 (npm workspace scripts otherwise run from the package directory):
 
 ```powershell
-$resolveCheckout = 'C:\Users\Admin\Desktop\Resolve Api'
-Set-Location $resolveCheckout
+# Run from the repository root.
 node --env-file=.env apps/api/dist/main.js
 ```
 
@@ -205,8 +221,8 @@ $resolveApiKey = 'rslv_test_replace_with_demo_key'
 $resolveHeaders = @{ Authorization = "Bearer $resolveApiKey" }
 ```
 
-Replace `$resolveApiKey` with the key shown once by bootstrap. Expected health
-is successful; bootstrap's scopes include the new `entities:read` permission.
+Replace `$resolveApiKey` with the key shown once by bootstrap. The key includes
+`entities:read` for the canonical entity lookups below.
 
 ### 2. Register sources with different authority
 
@@ -420,15 +436,18 @@ for local development only. Stop the API with Ctrl+C in its terminal, then
 
 ## Start the complete local stack
 
+See the [setup guide](docs/getting-started.md) for configuration, a walkthrough,
+and the client example. From an initialized checkout:
+
 ```powershell
-docker compose up --build -d
+docker compose up --build --wait
 ```
 
 Check the services:
 
 ```powershell
-docker compose ps
-Invoke-RestMethod http://localhost:3000/health
+docker compose ps --all
+Invoke-RestMethod http://localhost:3000/health/ready
 Invoke-RestMethod http://localhost:3000/docs-json
 ```
 
@@ -483,6 +502,7 @@ tests/integration                     Migration, API, isolation, blocking-plan, 
 tests/fixtures                        Version-controlled integration input and expected data
 tests/golden-dataset                  Labeled resolution examples
 docs                                  Architecture and policy references
+examples                              Runnable Node.js client
 ```
 
 Read `AGENTS.md` before changing code. It contains the repository engineering rules.

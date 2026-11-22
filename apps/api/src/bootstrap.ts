@@ -43,9 +43,20 @@ export function configureApplication(
     app,
     new DocumentBuilder()
       .setTitle('Resolve API')
-      .setDescription('Explainable, reversible entity resolution for person and company records.')
+      .setDescription(
+        'Resolve reconciles Person and Company records while preserving source data and decision evidence. ' +
+          'Versioned routes use a tenant API key. Register a source before submitting single records or batches.',
+      )
       .setVersion('0.1.0')
-      .addBearerAuth({ type: 'http', scheme: 'bearer' }, 'api-key')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          description:
+            'Use the tenant API key as a Bearer token. Each operation requires the matching API-key scope.',
+        },
+        'api-key',
+      )
       .build(),
   );
   documentRateLimits(document);

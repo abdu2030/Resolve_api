@@ -2,6 +2,12 @@
 
 Resolve supports `person` and `company` records. External JSON uses snake_case.
 
+The running API serves Swagger UI at `/docs` and generates OpenAPI JSON
+at `/docs-json`. The single-ingestion envelope and the items in a batch
+describe the same Person and Company payloads. See the
+[setup guide and client example](../getting-started.md) for a working
+source registration, ingestion, and batch polling flow.
+
 ## Operational controls (Week 3 Day 4)
 
 Authenticated, authorized API requests share an API-key budget and a tenant
